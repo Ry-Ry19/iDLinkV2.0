@@ -1,11 +1,13 @@
 import DashboardCard from "@/components/DashboardCard";
 import Footer from "@/components/Footer";
+import HighlightedName from "@/components/HighlightedName";
 import Navbar from "@/components/Navbar";
 import StatusBadge from "@/components/StatusBadge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, Bell, FileText, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 
 interface User {
   fullname: string;
@@ -14,24 +16,81 @@ interface User {
   email: string;
 }
 
+interface Application {
+  id: number;
+  id_display: string;
+  fullname: string;
+  idno: string;
+  status: "submitted" | "under_review" | "approved" | "returned" | "rejected" | "expired";
+  date: string;
+}
+
 const StudentDashboard = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    const storedUser = localStorage.getItem("user");
+    return storedUser ? JSON.parse(storedUser) : null;
+  });
+  const [recentApplications, setRecentApplications] = useState<Application[]>([]);
 
+  // Load logged-in user and ensure correct role
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      const parsed = JSON.parse(storedUser);
+      // Verify user role is student or employee (not staff)
+      if (parsed.role === "staff") {
+        // Redirect staff to their dashboard
+        navigate("/staff/dashboard", { replace: true });
+        return;
+      }
+      setUser(parsed);
+      fetchRecentApplications(parsed.idno);
     } else {
-      // If no user is logged in, redirect to login
       navigate("/login");
     }
   }, [navigate]);
 
-  const recentApplications = [
-    { id: "APP001", type: "New ID", status: "under_review" as const, date: "2024-01-15" },
-    { id: "APP002", type: "Revalidation", status: "approved" as const, date: "2024-01-10" },
-  ];
+  // Fetch user's recent applications from backend
+  const fetchRecentApplications = async (idno: string) => {
+    try {
+      const res = await fetch(`http://localhost:5000/api/applications?user=${idno}`);
+      if (!res.ok) throw new Error("Failed to fetch applications");
+      const data: Application[] = await res.json();
+      setRecentApplications(data);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to load your applications");
+    }
+  };
+
+  // Handle automatic revalidation
+  const handleRevalidate = async () => {
+    if (!user) return;
+
+    try {
+      const res = await fetch("http://localhost:5000/api/applications/revalidate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idno: user.idno,
+          fullname: user.fullname,
+          role: user.role
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to submit");
+
+      toast.success(data.message);
+
+      // Refresh recent applications after submission
+      fetchRecentApplications(user.idno);
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || "Server error");
+    }
+  };
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -41,14 +100,30 @@ const StudentDashboard = () => {
         userName={user?.fullname || ""}
       />
 
-      
       <main className="flex-1 bg-background">
         <div className="container mx-auto px-4 py-8">
-          <div className="mb-8">
-            <h1 className="text-3xl font-bold mb-2">Student Dashboard</h1>
-            <p className="text-muted-foreground">
-              Welcome back{user ? `, ${user.fullname}` : ""}! Manage your ID applications here.
-            </p>
+          <div className="mb-8 grid gap-4 md:grid-cols-3 items-start">
+            <div className="md:col-span-2">
+              <h1 className="text-3xl font-bold mb-2 flex items-baseline gap-3">
+                Student Dashboard
+                <span className="text-sm text-muted-foreground">•</span>
+                <span className="text-sm text-muted-foreground">Welcome back</span>
+                {user && <HighlightedName name={user.fullname} />}
+              </h1>
+              <p className="text-muted-foreground">Manage your ID applications here with ease.</p>
+            </div>
+
+            <div className="md:col-span-1">
+              <div className="bg-card p-4 rounded-lg shadow-card border border-border">
+                <p className="text-xs text-muted-foreground">Signed in as</p>
+                <p className="font-semibold mt-1">{user?.fullname}</p>
+                <p className="text-sm text-muted-foreground mt-1">{user?.role?.toUpperCase()}</p>
+                <div className="mt-3 flex gap-2">
+                  <button onClick={() => navigate('/track')} className="px-3 py-1 rounded-md bg-primary text-white text-sm">Track</button>
+                  <button onClick={() => navigate('/apply')} className="px-3 py-1 rounded-md border border-border text-sm">Apply</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* Quick Actions */}
@@ -63,7 +138,7 @@ const StudentDashboard = () => {
               title="Revalidate ID"
               description="Renew your existing ID"
               icon={RefreshCw}
-              onClick={() => navigate("/revalidate")}
+              onClick={handleRevalidate}
             />
             <DashboardCard
               title="Track Status"
@@ -89,25 +164,39 @@ const StudentDashboard = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                {recentApplications.map((app) => (
-                  <div
-                    key={app.id}
-                    className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-base cursor-pointer"
-                    onClick={() => navigate("/track")}
-                  >
-                    <div>
-                      <p className="font-semibold">{app.id}</p>
-                      <p className="text-sm text-muted-foreground">{app.type}</p>
+                {recentApplications.length === 0 ? (
+                  <p className="text-muted-foreground">You have no applications yet.</p>
+                ) : (
+                  recentApplications.map((app) => (
+                    <div
+                      key={app.id}
+                      className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-base cursor-pointer"
+                      onClick={() => navigate("/track")}
+                    >
+                      <div>
+                        <p className="font-semibold">{app.id_display}</p>
+                        <p className="text-sm text-muted-foreground">{app.fullname}</p>
+                      </div>
+                      <div className="text-right">
+                        <StatusBadge status={app.status} />
+                        <p className="text-xs text-muted-foreground mt-1">{app.date}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <StatusBadge status={app.status} />
-                      <p className="text-xs text-muted-foreground mt-1">{app.date}</p>
-                    </div>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
             </CardContent>
           </Card>
+
+          {/* Optional Footer Revalidate Button */}
+          <div className="mt-6 text-center">
+            <button
+              onClick={handleRevalidate}
+              className="px-6 py-2 bg-primary text-white rounded-md hover:bg-primary/80 transition"
+            >
+              Revalidate ID
+            </button>
+          </div>
         </div>
       </main>
 

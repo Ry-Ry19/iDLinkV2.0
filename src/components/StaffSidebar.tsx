@@ -1,21 +1,13 @@
 import { NavLink } from "@/components/NavLink";
 import {
-  LayoutDashboard,
-  Clock,
-  CheckCircle,
-  XCircle,
   Database,
-  FileText,
+  LayoutDashboard
 } from "lucide-react";
 
 const StaffSidebar = () => {
   const navItems = [
     { title: "Dashboard", url: "/staff/dashboard", icon: LayoutDashboard },
-    { title: "Pending Applications", url: "/staff/pending", icon: Clock },
-    { title: "Approved Applications", url: "/staff/approved", icon: CheckCircle },
-    { title: "Returned Applications", url: "/staff/returned", icon: XCircle },
     { title: "Manage Records", url: "/staff/records", icon: Database },
-    { title: "System Logs", url: "/staff/logs", icon: FileText },
   ];
 
   return (

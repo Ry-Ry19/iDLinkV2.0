@@ -1,3 +1,4 @@
+import HighlightedName from "@/components/HighlightedName";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -7,7 +8,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { GraduationCap, LogOut, User } from "lucide-react";
+import { GraduationCap, LogOut, Moon, Sun, User } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 interface NavbarProps {
@@ -18,6 +20,30 @@ interface NavbarProps {
 
 const Navbar = ({ isLoggedIn = false, userRole = null, userName = "" }: NavbarProps) => {
   const navigate = useNavigate();
+
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem("theme");
+      if (stored) return stored === "dark";
+      return typeof window !== "undefined" && window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    } catch (e) {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      if (isDark) {
+        document.documentElement.classList.add("dark");
+        localStorage.setItem("theme", "dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+        localStorage.setItem("theme", "light");
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [isDark]);
 
   const handleLogout = () => {
     // Clear session and redirect to home
@@ -36,6 +62,9 @@ const Navbar = ({ isLoggedIn = false, userRole = null, userName = "" }: NavbarPr
         </Link>
 
         <div className="flex items-center gap-4">
+          <Button variant="ghost" onClick={() => setIsDark(!isDark)} aria-label="Toggle theme">
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+          </Button>
           {!isLoggedIn ? (
             <>
               <Button variant="ghost" asChild>
@@ -50,7 +79,7 @@ const Navbar = ({ isLoggedIn = false, userRole = null, userName = "" }: NavbarPr
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2">
                   <User className="h-4 w-4" />
-                  <span className="hidden md:inline">{userName}</span>
+                  <span className="hidden md:inline-flex items-center"><HighlightedName name={userName} /></span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56">
