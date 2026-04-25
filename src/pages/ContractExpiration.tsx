@@ -1,3 +1,15 @@
+/**
+ * LEARNER'S NOTE:
+ * ContractExpiration.tsx displays employee contract details and expiration status.
+ *
+ * KEY CONCEPTS:
+ * - Contract details: Shows contract number, start/end dates, and days remaining
+ * - Conditional alert: Warning banner appears when contract expires within 60 days
+ * - Alert component: Uses warning variant with icon for visual emphasis
+ * - Status indicator: CheckCircle for active (>60 days), AlertCircle for expiring soon
+ * - Renewal guidance: Explains process and provides CTA buttons (Contact HR, Download)
+ * - Note: Currently uses mock data - would connect to real contract/HR system in production
+ */
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";

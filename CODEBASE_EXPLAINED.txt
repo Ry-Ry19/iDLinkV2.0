@@ -1,0 +1,935 @@
+================================================================================
+                   IDLINK SYSTEM - CODEBASE EXPLAINED
+                   A Learner's Guide to Understanding This Project
+================================================================================
+
+LAST UPDATED: 2026-04-25
+STACK: React 18 + TypeScript + Vite + Tailwind CSS + shadcn/ui + Supabase
+
+================================================================================
+                           TABLE OF CONTENTS
+================================================================================
+
+1. Project Overview
+2. File Structure
+3. Core Concepts Explained
+4. How the App Starts (Entry Point)
+5. App.tsx - The Brain
+6. Routing Explained
+7. Pages Overview
+8. Components Explained
+9. Design System
+10. API Integration Pattern
+11. State Management
+12. Common Patterns Used
+13. Supabase Migration Notes
+14. Quick Reference
+
+================================================================================
+                         1. PROJECT OVERVIEW
+================================================================================
+
+IDLink is an ID processing and management system for MSU-IIT (Mindanao
+State University - Iligan Institute of Technology).
+
+PURPOSE:
+- Students/Employees can apply for new IDs
+- Users can revalidate expired IDs
+- Staff can review, approve, or reject applications
+- Track application status in real-time
+
+USERS:
+- Students: Apply for ID, track status, revalidate
+- Employees: Same as students + contract monitoring
+- Staff (ICTC): Review applications, manage records, send notifications
+
+================================================================================
+                         2. FILE STRUCTURE
+================================================================================
+
+iD_System/
+├── public/                    # Static assets (images, videos)
+├── src/
+│   ├── main.tsx               # Entry point - first file that runs
+│   ├── App.tsx                # Root component - defines routes & providers
+│   ├── index.css              # Global styles & CSS variables (design system)
+│   │
+│   ├── pages/                 # Page components (full screens)
+│   │   ├── Landing.tsx         # Homepage (public)
+│   │   ├── Login.tsx          # Login page
+│   │   ├── Register.tsx       # Registration page
+│   │   ├── ApplyForID.tsx     # ID application form
+│   │   ├── RevalidateID.tsx   # ID renewal page
+│   │   ├── TrackStatus.tsx     # Application status tracker
+│   │   ├── ContractExpiration.tsx  # Employee contract info
+│   │   ├── StudentDashboard.tsx     # Student home
+│   │   ├── EmployeeDashboard.tsx   # Employee home
+│   │   ├── StaffDashboard.tsx      # Admin home
+│   │   ├── RecordsManagement.tsx    # Admin records table
+│   │   ├── ReviewApplication.tsx    # Admin review page
+│   │   ├── Team.tsx           # Team members page
+│   │   ├── Index.tsx          # Fallback/placeholder page
+│   │   └── NotFound.tsx       # 404 error page
+│   │
+│   ├── components/             # Reusable UI components
+│   │   ├── Navbar.tsx         # Top navigation bar
+│   │   ├── Footer.tsx         # Bottom footer
+│   │   ├── StaffSidebar.tsx   # Admin sidebar navigation
+│   │   ├── DashboardCard.tsx  # Clickable action card
+│   │   ├── HighlightedName.tsx # Styled name display
+│   │   ├── NavLink.tsx        # Router link with active states
+│   │   ├── StatusBadge.tsx    # Color-coded status display
+│   │   └── ui/                # shadcn/ui base components
+│   │       ├── button.tsx
+│   │       ├── card.tsx
+│   │       ├── input.tsx
+│   │       ├── dialog.tsx
+│   │       └── ... (many more)
+│   │
+│   ├── hooks/                 # Custom React hooks
+│   │   ├── use-toast.ts       # Toast notification hook
+│   │   └── use-mobile.tsx     # Mobile detection hook
+│   │
+│   ├── lib/                   # Utilities & configurations
+│   │   ├── utils.ts           # cn() function for classNames
+│   │   └── supabaseClient.ts  # Supabase database client
+│   │
+│   └── assets/                # Images (team photos, etc.)
+│
+├── tailwind.config.ts         # Tailwind CSS configuration
+├── package.json               # Dependencies & scripts
+├── REDESIGN_MAP.md           # Migration guide to Supabase
+└── DESIGN_SYSTEM.md          # Design system documentation
+
+================================================================================
+                         3. CORE CONCEPTS EXPLAINED
+================================================================================
+
+CONCEPT 1: COMPONENTS
+A component is a piece of UI (like a button, card, or page) written as a
+function that returns JSX (looks like HTML).
+
+Example:
+    function Button() {
+      return <button className="bg-primary">Click Me</button>;
+    }
+
+CONCEPT 2: JSX
+JSX is a syntax extension that lets you write HTML-like code in JavaScript.
+It looks like HTML but you can use JavaScript variables and logic inside.
+
+Example:
+    const name = "Juan";
+    return <p>Hello, {name}!</p>;  // {name} is JavaScript
+
+CONCEPT 3: PROPS
+Props are inputs you pass to a component (like function parameters).
+
+Example:
+    function Greeting({ name, role }) {
+      return <p>Welcome, {name}! You are a {role}.</p>;
+    }
+
+    // Usage:
+    <Greeting name="Juan" role="student" />
+
+CONCEPT 4: STATE
+State is data that changes over time in a component.
+When state changes, the component re-renders (updates on screen).
+
+Example:
+    const [count, setCount] = useState(0);
+
+    <button onClick={() => setCount(count + 1)}>
+      Clicked {count} times
+    </button>
+
+CONCEPT 5: HOOKS
+Hooks are special functions that let you use React features.
+- useState: Manage changing data
+- useEffect: Do something after render
+- useNavigate: Navigate to other pages
+
+================================================================================
+                    4. HOW THE APP STARTS (ENTRY POINT)
+================================================================================
+
+FILE: main.tsx
+
+This is the VERY FIRST file that runs when someone visits your app.
+
+CODE:
+    import { createRoot } from "react-dom/client";
+    import App from "./App.tsx";
+    import "./index.css";
+
+    createRoot(document.getElementById("root")!).render(<App />);
+
+WHAT HAPPENS:
+1. Browser loads the page
+2. Finds <div id="root"> in index.html
+3. React creates a "root" and renders <App /> inside it
+4. App component loads with all routes and providers
+
+Think of it like:
+    index.html = <div id="root"> is the empty container
+    main.tsx   = says "Put <App> inside that container"
+    App.tsx    = <App> is the full application
+
+================================================================================
+                         5. APP.TSX - THE BRAIN
+================================================================================
+
+FILE: App.tsx
+
+This is the ROOT COMPONENT. It sets up the entire application.
+
+PROVIDERS (Tools that work across the entire app):
+
+1. QueryClientProvider
+   - Purpose: Manages data fetching and caching
+   - Why: Instead of writing fetch logic everywhere, use React Query hooks
+   - Alternative without it: useEffect + useState for every API call
+
+2. TooltipProvider
+   - Purpose: Enables tooltip components (hover info boxes)
+   - Usage: Any component using Tooltip from shadcn/ui
+
+3. Toaster & Sonner
+   - Purpose: Shows toast notifications (success/error popups)
+   - Usage: toast.success("Logged in!") in any component
+
+4. BrowserRouter
+   - Purpose: Enables URL-based navigation without page reloads
+   - Alternative: Traditional <a href="/page"> which reloads the page
+
+STRUCTURE:
+    <QueryClientProvider>
+      <TooltipProvider>
+        <Toaster />
+        <Sonner />
+        <BrowserRouter>
+          <Routes>
+            {/* All your page routes here */}
+          </Routes>
+        </BrowserRouter>
+      </TooltipProvider>
+    </QueryClientProvider>
+
+================================================================================
+                        6. ROUTING EXPLAINED
+================================================================================
+
+HOW IT WORKS:
+BrowserRouter watches the URL and shows the matching Route's component.
+
+CODE:
+    <Routes>
+      <Route path="/" element={<Landing />} />
+      <Route path="/login" element={<Login />} />
+      <Route path="/student/dashboard" element={<StudentDashboard />} />
+    </Routes>
+
+PATH MATCHING:
+    "/"            → Landing.tsx
+    "/login"       → Login.tsx
+    "/anything"    → NotFound.tsx (the "*" catches all)
+
+ROUTE GROUPING:
+Routes are grouped by user role for clarity:
+    {/* Student Routes */}
+    <Route path="/student/dashboard" element={<StudentDashboard />} />
+
+    {/* Employee Routes */}
+    <Route path="/employee/dashboard" element={<EmployeeDashboard />} />
+
+    {/* Staff Routes */}
+    <Route path="/staff/dashboard" element={<StaffDashboard />} />
+    <Route path="/staff/records" element={<RecordsManagement />} />
+
+WHY GROUP?
+Makes it easier to see what each user type can access.
+
+================================================================================
+                        7. PAGES OVERVIEW
+================================================================================
+
+------------------------------------------------------------------------------
+LANDING.TSX - Public Homepage
+------------------------------------------------------------------------------
+PURPOSE: Showcase the app to visitors who haven't logged in.
+FEATURES:
+  - Hero section with gradient background
+  - "How It Works" 3-step explanation
+  - Feature cards grid (6 features)
+  - Call-to-action buttons
+KEY CONCEPTS:
+  - Component composition (Navbar + content + Footer)
+  - Array mapping for feature cards
+  - Responsive grid layouts (md:grid-cols-2, lg:grid-cols-3)
+  - Link components for navigation
+
+------------------------------------------------------------------------------
+LOGIN.TSX - User Authentication
+------------------------------------------------------------------------------
+PURPOSE: Authenticate users with email/password.
+FEATURES:
+  - Email & password input fields
+  - Role selection (student/employee/staff)
+  - Sends POST request to backend API
+  - Stores user info in localStorage on success
+  - Redirects to role-specific dashboard
+KEY CONCEPTS:
+  - Form handling with onSubmit
+  - Controlled inputs (useState for each field)
+  - API integration (fetch POST)
+  - localStorage for session persistence
+  - Navigation (useNavigate) after login
+  - Toast notifications for feedback
+
+CODE FLOW:
+  1. User enters email/password
+  2. Clicks "Login" button
+  3. handleLogin function runs
+  4. Fetch POST to /api/login
+  5. If success: store user in localStorage, navigate to dashboard
+  6. If error: show toast error message
+
+------------------------------------------------------------------------------
+REGISTER.TSX - New User Registration
+------------------------------------------------------------------------------
+PURPOSE: Create new user accounts.
+FEATURES:
+  - ID number, full name, email, password fields
+  - Conditional fields (course/year only for students)
+  - Role selection
+  - POST to backend API
+  - Redirects to login after success
+KEY CONCEPTS:
+  - Conditional rendering (if role === "student" show course/year)
+  - Form validation before submission
+  - Loading state during registration
+
+CODE FLOW:
+  1. User fills form
+  2. Selects role (student/employee/staff)
+  3. If student, additional course/year fields appear
+  4. Submit sends POST to /api/register
+  5. Success: navigate to /login
+  6. Error: show toast
+
+------------------------------------------------------------------------------
+APPLYFORID.TSX - ID Application Form
+------------------------------------------------------------------------------
+PURPOSE: Submit new ID applications with documents.
+FEATURES:
+  - Multi-section card layout (Personal Info, ID Details, Uploads)
+  - File uploads with preview (photo, signature, COR)
+  - File validation (5MB limit, type checking)
+  - Select dropdowns for department/ID type
+  - FormData for multipart submission
+KEY CONCEPTS:
+  - Controlled form state (formData object)
+  - useRef for file inputs
+  - URL.createObjectURL for image previews
+  - FormData for file uploads (multipart/form-data)
+  - File size/type validation
+
+CODE FLOW:
+  1. User fills personal info fields
+  2. Selects ID type and department
+  3. Uploads photo, signature, COR (optional)
+  4. Image previews show immediately
+  5. Submit creates FormData and POSTs to /api/applications
+  6. Success: reset form, navigate to /track
+
+------------------------------------------------------------------------------
+REVALIDATEID.TSX - ID Renewal
+------------------------------------------------------------------------------
+PURPOSE: Request renewal of existing ID.
+FEATURES:
+  - Search by ID number
+  - Display found record
+  - Submit revalidation request
+KEY CONCEPTS:
+  - Search functionality
+  - Conditional rendering (show record only after search)
+  - Mock data (would connect to API in production)
+
+------------------------------------------------------------------------------
+TRACKSTATUS.TSX - Application Status Tracker
+------------------------------------------------------------------------------
+PURPOSE: Monitor application progress in real-time.
+FEATURES:
+  - Fetches user's applications from API
+  - Timeline visualization (Submitted → Under Review → Approved → Ready)
+  - Auto-refresh every 5 seconds (polling)
+  - Role-based access (staff redirected)
+KEY CONCEPTS:
+  - useEffect for initial data fetch
+  - setInterval for polling
+  - Timeline mapping based on status
+  - useEffect cleanup (return clearInterval)
+
+CODE FLOW:
+  1. Component mounts
+  2. Check localStorage for user
+  3. If staff, redirect away
+  4. Fetch applications from API
+  5. Display timeline for each application
+  6. Set up 5-second polling for updates
+  7. On unmount, clear interval
+
+------------------------------------------------------------------------------
+STUDENTDASHBOARD.TSX - Student Home
+------------------------------------------------------------------------------
+PURPOSE: Central hub for student actions.
+FEATURES:
+  - Welcome message with highlighted name
+  - Quick action cards (Apply, Revalidate, Track, Notifications)
+  - Recent applications list
+  - Role enforcement (redirects non-students)
+KEY CONCEPTS:
+  - User state from localStorage
+  - DashboardCard component usage
+  - API integration for recent applications
+  - Revalidation API call
+
+------------------------------------------------------------------------------
+EMPLOYEEDASHBOARD.TSX - Employee Home
+------------------------------------------------------------------------------
+PURPOSE: Similar to student dashboard but with contract features.
+DIFFERENCES FROM STUDENT:
+  - Contract alert banner (shows when <60 days remaining)
+  - Additional "Contract Info" dashboard card
+  - Links to /contract page
+
+------------------------------------------------------------------------------
+STAFFDASHBOARD.TSX - Admin Overview
+------------------------------------------------------------------------------
+PURPOSE: ICTC staff monitor all applications system-wide.
+FEATURES:
+  - Statistics cards (Pending, Approved Today, Returned, Total Users)
+  - Recent activity list
+  - Auto-refresh stats every 5 seconds
+  - Staff-only access (students/employees redirected)
+KEY CONCEPTS:
+  - Promise.all for parallel API calls
+  - Stats calculation from raw application data
+  - Relative time formatting (e.g., "5 min ago")
+  - Staff-only route protection
+
+CODE FLOW:
+  1. Check user role from localStorage
+  2. If not staff, redirect to home
+  3. Fetch applications and user count in parallel
+  4. Calculate stats (pending = submitted + under_review)
+  5. Set up silent polling every 5 seconds
+
+------------------------------------------------------------------------------
+RECORDSMANAGEMENT.TSX - Admin Records Table
+------------------------------------------------------------------------------
+PURPOSE: View, search, filter, and manage all applications.
+FEATURES:
+  - Table with all applications
+  - Search by name/ID
+  - Filter by status (dropdown)
+  - Schedule pickup dialog
+  - Compose email dialog
+  - Accept/reject revalidations inline
+  - View uploaded files dialog
+  - Delete records
+KEY CONCEPTS:
+  - Complex table with actions
+  - Multiple dialog components (inline)
+  - PUT requests for status updates
+  - DELETE requests for removal
+  - Email notification integration
+  - File preview from uploads folder
+
+CODE STRUCTURE:
+  - EditScheduleDialog: Modal for pickup scheduling
+  - ComposeEmailDialog: Modal for custom emails
+  - Main component: Table with filters and actions
+
+------------------------------------------------------------------------------
+STAFFSIDEBAR.TSX - Admin Navigation
+------------------------------------------------------------------------------
+PURPOSE: Sidebar menu for staff pages.
+FEATURES:
+  - Dashboard link
+  - Manage Records link
+  - Uses custom NavLink component
+  - Responsive (hidden on mobile)
+
+------------------------------------------------------------------------------
+CONTRACTEXPIRATION.TSX - Employee Contract Info
+------------------------------------------------------------------------------
+PURPOSE: Display contract details and expiration status.
+FEATURES:
+  - Contract number, dates, days remaining
+  - Warning alert when <60 days
+  - Renewal guidance
+KEY CONCEPTS:
+  - Alert component for warnings
+  - Conditional rendering based on days remaining
+  - Mock data (would connect to HR system)
+
+------------------------------------------------------------------------------
+TEAM.TSX - Development Team
+------------------------------------------------------------------------------
+PURPOSE: Showcase the team behind IDLink.
+FEATURES:
+  - Static team member data
+  - Responsive layout (horizontal desktop, vertical mobile)
+  - Hover animations on cards
+  - Team member images
+
+------------------------------------------------------------------------------
+NOTFOUND.TSX - 404 Page
+------------------------------------------------------------------------------
+PURPOSE: Show when no route matches.
+FEATURES:
+  - Logs the attempted path
+  - "Return to Home" link
+
+================================================================================
+                      8. COMPONENTS EXPLAINED
+================================================================================
+
+------------------------------------------------------------------------------
+NAVBAR.TSX
+------------------------------------------------------------------------------
+PURPOSE: Top navigation bar visible on most pages.
+PROPS:
+  - isLoggedIn: boolean - shows login button or user menu
+  - userRole: "student" | "employee" | "staff" | null
+  - userName: string - display name
+FEATURES:
+  - Theme toggle (dark/light mode)
+  - User dropdown menu
+  - Logout clears session and redirects to home
+  - Uses HighlightedName component for display
+KEY CONCEPTS:
+  - DropdownMenu from shadcn/ui
+  - Theme state with classList toggle
+  - Conditional rendering based on auth state
+
+------------------------------------------------------------------------------
+FOOTER.TSX
+------------------------------------------------------------------------------
+PURPOSE: Site-wide footer with links and contact info.
+FEATURES:
+  - 4-column grid (brand, quick links, resources, contact)
+  - Lucide icons for contact details
+  - Dynamic copyright year
+  - Internal links using react-router-dom Link
+
+------------------------------------------------------------------------------
+DASHBOARDCARD.TSX
+------------------------------------------------------------------------------
+PURPOSE: Reusable clickable card for dashboard actions.
+PROPS:
+  - title: Card heading
+  - description: Subtext
+  - icon: LucideIcon component to display
+  - onClick: Function to run when clicked
+  - children: Optional content (like notification count)
+  - iconClassName: Custom icon color
+FEATURES:
+  - Hover shadow effect
+  - Cursor pointer when onClick provided
+  - Icon on the right side
+
+------------------------------------------------------------------------------
+STATUSBADGE.TSX
+------------------------------------------------------------------------------
+PURPOSE: Color-coded badge showing application status.
+PROPS:
+  - status: StatusType ("submitted" | "under_review" | "approved" | etc.)
+  - showIcon: boolean - whether to show icon (default: true)
+FEATURES:
+  - Color mapping for each status:
+    - submitted: blue (info) + Clock icon
+    - under_review: yellow (warning) + AlertCircle icon
+    - approved: green (success) + CheckCircle icon
+    - returned: red (destructive) + XCircle icon
+    - rejected: red (destructive) + XCircle icon
+    - expired: gray (muted) + AlertCircle icon
+
+------------------------------------------------------------------------------
+HIGHLIGHTEDNAME.TSX
+------------------------------------------------------------------------------
+PURPOSE: Display user name with styled background.
+PROPS:
+  - name: string or undefined
+FEATURES:
+  - Returns null if no name provided
+  - Gradient pill background (yellow tones)
+
+------------------------------------------------------------------------------
+NAVLINK.TSX
+------------------------------------------------------------------------------
+PURPOSE: Wrapper around React Router's NavLink with custom styling.
+PROPS:
+  - to: URL path
+  - className: Base classes
+  - activeClassName: Classes applied when route is active
+  - pendingClassName: Classes applied when route is pending
+FEATURES:
+  - forwardRef for accessing DOM element
+  - Uses cn() utility to merge classNames
+  - Detects active/pending state from router
+
+------------------------------------------------------------------------------
+STAFFSIDEBAR.TSX
+------------------------------------------------------------------------------
+PURPOSE: Admin navigation sidebar.
+NAV ITEMS:
+  - Dashboard → /staff/dashboard
+  - Manage Records → /staff/records
+FEATURES:
+  - Hidden on mobile (hidden md:flex)
+  - Uses NavLink with activeClassName
+  - Hover effect on nav items
+  - Border-right separator
+
+================================================================================
+                      9. DESIGN SYSTEM
+================================================================================
+
+The design system is defined in src/index.css using CSS variables.
+
+------------------------------------------------------------------------------
+COLOR PALETTE
+------------------------------------------------------------------------------
+
+Primary (Maroon - Brand Color):
+  --primary: hsl(0 100% 25%)           # Main buttons, links
+  --primary-foreground: hsl(0 0% 100%) # White text on primary
+  --primary-light: hsl(0 65% 45%)      # Hover state
+  --primary-dark: hsl(0 100% 20%)      # Active state
+
+Accent (Gold):
+  --accent: hsl(43 69% 53%)            # Secondary highlights
+  --accent-foreground: hsl(0 0% 15%)   # Dark text on gold
+  --accent-light: hsl(43 75% 65%)      # Lighter gold
+
+Semantic Colors:
+  --destructive: hsl(0 84% 60%)        # Errors, red
+  --success: hsl(142 76% 36%)          # Success, green
+  --warning: hsl(38 92% 50%)           # Warnings, amber
+  --info: hsl(217 91% 60%)             # Info, blue
+
+Neutrals:
+  --background: hsl(0 0% 98%)          # Page background
+  --foreground: hsl(0 0% 15%)          # Primary text
+  --card: hsl(0 0% 100%)               # Card backgrounds
+  --muted: hsl(0 0% 95%)               # Muted backgrounds
+  --border: hsl(0 0% 90%)              # Borders
+
+------------------------------------------------------------------------------
+GRADIENTS (Custom Utilities)
+------------------------------------------------------------------------------
+
+.gradient-primary
+  Background: linear-gradient maroon
+
+.gradient-gold
+  Background: linear-gradient gold
+
+.gradient-hero
+  Background: 3-stop maroon gradient for hero sections
+
+------------------------------------------------------------------------------
+SHADOWS (Custom Utilities)
+------------------------------------------------------------------------------
+
+.shadow-card
+  Box-shadow: 0 2px 8px with low opacity
+  Used on: Card components throughout
+
+.shadow-hover
+  Box-shadow: 0 8px 24px with higher opacity
+  Used on: Cards when hovered
+
+------------------------------------------------------------------------------
+TRANSITIONS (Custom Utilities)
+------------------------------------------------------------------------------
+
+.transition-base
+  transition: all 0.2s ease
+  Use for: Simple hover effects
+
+.transition-smooth
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1)
+  Use for: Smoother, more deliberate animations
+
+------------------------------------------------------------------------------
+DARK MODE
+------------------------------------------------------------------------------
+
+Toggle via: Adding/removing "dark" class on <html> element
+
+When .dark is present, all CSS variables are remapped to darker versions:
+  --background becomes hsl(220 13% 12%)  # Dark charcoal
+  --foreground becomes hsl(210 16% 95%) # Light gray
+
+Navbar.tsx handles this toggle with:
+  document.documentElement.classList.add("dark")
+  document.documentElement.classList.remove("dark")
+
+------------------------------------------------------------------------------
+HOW TO USE THESE STYLES
+------------------------------------------------------------------------------
+
+In any component:
+  <div className="bg-primary text-primary-foreground">
+    Primary colored background with white text
+  </div>
+
+  <button className="gradient-primary text-primary-foreground">
+    Maroon gradient button
+  </button>
+
+  <Card className="shadow-card hover:shadow-hover">
+    Card with hover effect
+  </Card>
+
+================================================================================
+                      10. API INTEGRATION PATTERN
+================================================================================
+
+CURRENT APPROACH: Fetch to local backend
+
+All API calls follow this pattern:
+
+LOGIN (POST):
+  const res = await fetch("http://localhost:5000/api/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password })
+  });
+
+  const data = await res.json();
+
+  if (res.ok) {
+    // Success
+    localStorage.setItem("user", JSON.stringify(data));
+    navigate("/dashboard");
+  } else {
+    // Error
+    toast.error(data.message);
+  }
+
+REGISTER (POST):
+  Similar to login but with more fields (idno, fullname, course, year, role)
+
+GET APPLICATIONS:
+  const res = await fetch("http://localhost:5000/api/applications?user=" + idno);
+  const data = await res.json();
+  setApplications(data);
+
+UPDATE STATUS (PUT):
+  const res = await fetch(`http://localhost:5000/api/applications/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "approved", notify: true })
+  });
+
+DELETE (DELETE):
+  const res = await fetch(`http://localhost:5000/api/applications/${id}`, {
+    method: "DELETE"
+  });
+
+================================================================================
+                      11. STATE MANAGEMENT
+================================================================================
+
+LOCAL STATE (useState):
+Used for component-specific data that doesn't need to be shared.
+
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<User | null>(null);
+
+LOCAL STORAGE:
+Used for persistence across page reloads.
+
+  // Save
+  localStorage.setItem("user", JSON.stringify(userData));
+
+  // Load
+  const stored = localStorage.getItem("user");
+  if (stored) setUser(JSON.parse(stored));
+
+  // Remove
+  localStorage.removeItem("user");
+
+EFFECT CLEANUP:
+When setting up intervals or subscriptions, always clean up.
+
+  useEffect(() => {
+    const interval = setInterval(() => fetchData(), 5000);
+
+    return () => clearInterval(interval);  // This runs on unmount
+  }, []);
+
+================================================================================
+                      12. COMMON PATTERNS USED
+================================================================================
+
+PATTERN 1: Role-Based Redirect
+  useEffect(() => {
+    const user = JSON.parse(localStorage.getItem("user") || "{}");
+    if (user.role === "staff") {
+      navigate("/staff/dashboard");
+    }
+  }, [navigate]);
+
+PATTERN 2: Conditional Loading
+  {loading ? (
+    <p>Loading...</p>
+  ) : (
+    <div>{data}</div>
+  )}
+
+PATTERN 3: Array Mapping with Keys
+  {items.map((item) => (
+    <Card key={item.id}>{item.name}</Card>
+  ))}
+
+PATTERN 4: Polling for Updates
+  useEffect(() => {
+    const poll = setInterval(() => fetchData(true), 5000);
+    return () => clearInterval(poll);
+  }, []);
+
+PATTERN 5: Controlled Input
+  const [value, setValue] = useState("");
+  <input value={value} onChange={(e) => setValue(e.target.value)} />
+
+PATTERN 6: Dialog Handling
+  const [open, setOpen] = useState(false);
+  <Dialog open={open} onOpenChange={setOpen}>
+    <DialogTrigger>Open</DialogTrigger>
+    <DialogContent>Content</DialogContent>
+  </Dialog>
+
+PATTERN 7: Toast Notifications
+  import { toast } from "sonner";
+
+  toast.success("Operation completed!");
+  toast.error("Something went wrong");
+
+PATTERN 8: Form Submit Handler
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();  // Prevent page reload
+    // ... form logic
+  };
+
+  <form onSubmit={handleSubmit}>...</form>
+
+================================================================================
+                      13. SUPABASE MIGRATION NOTES
+================================================================================
+
+Based on REDESIGN_MAP.md, here's how to migrate:
+
+AUTHENTICATION:
+
+BEFORE (Current):
+  fetch("http://localhost:5000/api/login", {
+    method: "POST",
+    body: JSON.stringify({ email, password })
+  })
+
+AFTER (Supabase):
+  supabase.auth.signInWithPassword({ email, password })
+
+BEFORE:
+  fetch("http://localhost:5000/api/register", {
+    method: "POST",
+    body: JSON.stringify({ email, password, fullname, role })
+  })
+
+AFTER:
+  supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { fullname, role }
+    }
+  })
+
+APPLICATIONS:
+
+BEFORE:
+  fetch("http://localhost:5000/api/applications", {
+    method: "POST",
+    body: formData  // FormData for file uploads
+  })
+
+AFTER:
+  supabase.storage.upload('photos', file)  // Upload files first
+  supabase.from('applications').insert({
+    photo_url: uploadedUrl,
+    // ... other fields
+  })
+
+STEPS TO MIGRATE:
+1. Create AuthContext to wrap app with supabase.auth.onAuthStateChange()
+2. Define TypeScript types for User, Application, Contract, TeamMember
+3. Replace Login.tsx fetch with supabase.auth.signInWithPassword()
+4. Replace Register.tsx fetch with supabase.auth.signUp()
+5. Replace application queries with supabase.from('applications').select()
+6. Set up Row Level Security (RLS) policies in Supabase dashboard
+
+================================================================================
+                      14. QUICK REFERENCE
+================================================================================
+
+RUN DEVELOPMENT SERVER:
+  cd iD_System
+  npm run dev        # or: bun run dev
+
+BUILD FOR PRODUCTION:
+  npm run build
+
+PREVIEW PRODUCTION BUILD:
+  npm run preview
+
+FILE LOCATION SHORTCUTS:
+  Navbar:        src/components/Navbar.tsx
+  Footer:        src/components/Footer.tsx
+  Sidebar:       src/components/StaffSidebar.tsx
+  Styles:       src/index.css
+  Routes:        src/App.tsx
+  Entry:         src/main.tsx
+
+KEY IMPORTS:
+  import { useState, useEffect } from "react"
+  import { useNavigate } from "react-router-dom"
+  import { cn } from "@/lib/utils"
+  import { toast } from "sonner"
+  import { Button } from "@/components/ui/button"
+  import { Card } from "@/components/ui/card"
+
+TAILWIND CLASSES CHEATSHEET:
+  flex           → display: flex
+  items-center   → align-items: center
+  justify-center → justify-content: center
+  gap-4          → gap: 1rem
+  p-4            → padding: 1rem
+  m-4            → margin: 1rem
+  text-xl        → font-size: 1.25rem
+  font-bold      → font-weight: bold
+  bg-primary     → background: maroon
+  text-white     → color: white
+  rounded-lg     → border-radius: 0.5rem
+  shadow-card    → custom card shadow
+  gradient-primary → maroon gradient
+
+================================================================================
+                              END OF DOCUMENT
+================================================================================

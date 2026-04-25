@@ -1,3 +1,18 @@
+/**
+ * LEARNER'S NOTE:
+ * RecordsManagement.tsx is the staff interface for viewing and managing all applications.
+ *
+ * KEY CONCEPTS:
+ * - Staff-only route: Enforces authentication and staff role on mount
+ * - Search and filter: Text search by name/ID plus status dropdown filter
+ * - EditScheduleDialog component: Modal for scheduling pickup date and batch assignment
+ * - ComposeEmailDialog component: Modal for sending custom emails to applicants
+ * - API operations: PUT for updating status (approve/reject/revalidate), DELETE for removing records
+ * - Email notification: Backend sends email when status changes (controlled by notify: true)
+ * - Email preview: Backend returns Ethereal preview URL for testing without real delivery
+ * - File viewing: Dialog displays uploaded photo, signature, and COR documents
+ * - Polling: Silent refresh every 5 seconds to keep records current
+ */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import StaffSidebar from "@/components/StaffSidebar";

@@ -1,3 +1,19 @@
+/**
+ * LEARNER'S NOTE:
+ * StatusBadge.tsx displays application status with color-coded badges and icons.
+ *
+ * KEY CONCEPTS:
+ * - StatusConfig object: Maps each status to label, variant, icon, and CSS className
+ * - Badge component: Uses shadcn/ui Badge for styled status display
+ * - Icon mapping: Dynamically selects the appropriate icon (Clock, AlertCircle, CheckCircle, XCircle)
+ * - Color coding:
+ *   - submitted: info (blue) - Clock icon
+ *   - under_review: warning (yellow) - AlertCircle icon
+ *   - approved: success (green) - CheckCircle icon
+ *   - returned/rejected: destructive (red) - XCircle icon
+ *   - expired: muted (gray) - AlertCircle icon
+ * - showIcon prop: Allows hiding the icon while keeping the label
+ */
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, CheckCircle, Clock, XCircle } from "lucide-react";
 

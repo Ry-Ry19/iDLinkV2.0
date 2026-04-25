@@ -1,3 +1,16 @@
+/**
+ * LEARNER'S NOTE:
+ * TrackStatus.tsx displays application status with timeline visualization.
+ *
+ * KEY CONCEPTS:
+ * - Authentication check: Validates user from localStorage, redirects to /login if not found
+ * - Role-based access: Staff cannot access this page (redirected to staff dashboard)
+ * - API polling: setInterval fetches updates every 5 seconds for real-time status
+ * - Timeline generation: Maps application status to visual step progress (Submitted → Under Review → Approved → Ready for Pickup)
+ * - Status types: submitted, under_review, approved, returned, rejected, expired
+ * - Dynamic application type detection: Checks remarks to determine "ID Revalidation" vs "New ID Application"
+ * - useEffect cleanup: Returns cleanup function to clear polling interval on unmount
+ */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import StatusBadge from "@/components/StatusBadge";

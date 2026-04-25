@@ -1,3 +1,18 @@
+/**
+ * LEARNER'S NOTE:
+ * use-toast.ts is a custom React hook and toast utility for notifications.
+ *
+ * KEY CONCEPTS:
+ * - Custom toast() function: Creates toast notifications with auto-generated IDs
+ * - Reducer pattern: Uses a state reducer for managing toast list (ADD, UPDATE, DISMISS, REMOVE)
+ * - Memory state: Maintains toasts in memory with ref to survive re-renders
+ * - listeners array: Subscriber pattern for React state synchronization
+ * - TOAST_LIMIT: Only 1 toast can be visible at a time
+ * - TOAST_REMOVE_DELAY: Auto-removes toasts after 1000000ms (~16.7 minutes)
+ * - Cleanup: useEffect removes listener on unmount to prevent memory leaks
+ *
+ * This is a headless toast system - UI is rendered by the Toaster component in App.tsx
+ */
 import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";

@@ -1,3 +1,16 @@
+/**
+ * LEARNER'S NOTE:
+ * StaffDashboard.tsx is the admin dashboard for ICTC staff managing all applications.
+ *
+ * KEY CONCEPTS:
+ * - Staff-only access: Redirects students/employees away from this page
+ * - Stats calculation: Derives pending, approvedToday, returned, totalUsers from API data
+ * - Polling for updates: Silent polling every 5 seconds to keep stats current
+ * - Relative time formatting: formatRelative() converts timestamps to "X min ago" format
+ * - Promise.all: Simultaneous API calls for applications and user count
+ * - StaffSidebar component: Navigation menu specific to admin functions
+ * - StatusBadge: Shows application status in recent activity list
+ */
 import Footer from "@/components/Footer";
 import HighlightedName from "@/components/HighlightedName";
 import Navbar from "@/components/Navbar";

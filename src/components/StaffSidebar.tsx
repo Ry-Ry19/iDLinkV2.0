@@ -1,3 +1,14 @@
+/**
+ * LEARNER'S NOTE:
+ * StaffSidebar.tsx is the admin navigation sidebar for ICTC staff pages.
+ *
+ * KEY CONCEPTS:
+ * - Navigation items array: Defines available routes with title, URL, and icon
+ * - NavLink component: Uses custom NavLink for active state styling
+ * - responsive visibility: Hidden on mobile (hidden md:flex), shown on desktop
+ * - Icon integration: Lucide icons (LayoutDashboard, Database) for visual navigation
+ * - activeClassName: Highlights the current active route using CSS classes
+ */
 import { NavLink } from "@/components/NavLink";
 import {
   Database,

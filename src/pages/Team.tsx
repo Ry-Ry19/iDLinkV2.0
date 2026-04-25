@@ -1,3 +1,15 @@
+/**
+ * LEARNER'S NOTE:
+ * Team.tsx displays the development team members behind IDLink.
+ *
+ * KEY CONCEPTS:
+ * - Static data: Team members array with name, role, description, and image
+ * - Responsive layout: Horizontal overlapping cards on desktop, vertical stack on mobile
+ * - CSS transitions: scale and shadow animations on hover
+ * - Image styling: Object-cover for proper aspect ratio, border and rounded corners
+ * - Conditional classes: Middle card is larger (scale-110) with negative margin for overlap effect
+ * - Mobile breakpoint: hidden md:flex vs md:hidden for responsive switching
+ */
 import teamMember1 from "@/assets/team-member-1.jpg";
 import teamMember2 from "@/assets/team-member-2.jpg";
 import teamMember3 from "@/assets/team-member-3.jpg";

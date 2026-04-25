@@ -1,3 +1,16 @@
+/**
+ * LEARNER'S NOTE:
+ * ReviewApplication.tsx allows staff to review individual applications in detail.
+ *
+ * KEY CONCEPTS:
+ * - Application details: Displays applicant info (name, ID number, email, phone, department)
+ * - Document list: Shows uploaded documents with download buttons
+ * - Review decision: Staff can Approve or Return the application
+ * - Remarks requirement: Returning requires remarks to be entered first
+ * - Textarea component: Used for entering review comments/feedback
+ * - Status update: Navigation to appropriate list after action (approved/returned pages)
+ * - Note: Currently uses mock data - would connect to API in production
+ */
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";

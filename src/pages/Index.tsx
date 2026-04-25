@@ -1,5 +1,9 @@
-// Update this page (the content is just a fallback if you fail to update the page)
-
+/**
+ * LEARNER'S NOTE:
+ * Index.tsx is a simple placeholder page that serves as a fallback when
+ * no other route matches. It displays a basic "Welcome to Your Blank App" message.
+ * This is a fallback page - the actual routing shows Landing.tsx at "/" via App.tsx.
+ */
 const Index = () => {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background">

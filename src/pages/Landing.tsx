@@ -1,3 +1,15 @@
+/**
+ * LEARNER'S NOTE:
+ * Landing.tsx is the public homepage of the application.
+ *
+ * KEY CONCEPTS:
+ * - Component composition: Navbar at top, Footer at bottom, main content in between
+ * - Feature cards array: Maps over features array to render cards dynamically
+ * - Routing: Uses Link component from react-router-dom for navigation
+ * - Conditional styling: Uses gradient classes for visual emphasis (gradient-hero, gradient-gold)
+ * - Responsive design: grid-cols-2 and md:grid-cols-3 for responsive layouts
+ * - Sections: Hero, How It Works (3-step process), Features grid, CTA section
+ */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";

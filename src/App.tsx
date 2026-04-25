@@ -1,3 +1,22 @@
+/**
+ * LEARNER'S NOTE:
+ * App.tsx is the root component that sets up the entire application structure.
+ * It wraps the app with providers (QueryClient, TooltipProvider, Toaster) and
+ * configures React Router with all page routes.
+ *
+ * KEY CONCEPTS:
+ * - QueryClientProvider: Enables React Query for data fetching/caching
+ * - BrowserRouter + Routes: Handles client-side routing
+ * - Route paths: / = Landing, /login = Login, /student/dashboard = StudentDashboard, etc.
+ * - Role-based routing: Students, Employees, and Staff each have their own dashboard routes
+ *
+ * ROUTE STRUCTURE:
+ * Public routes: Landing, Login, Register, Apply, Revalidate, Track, Contract, Team
+ * Student routes: /student/dashboard
+ * Employee routes: /employee/dashboard
+ * Staff routes: /staff/dashboard, /staff/pending, /staff/records, etc.
+ * Catch-all: * renders NotFound page
+ */
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";

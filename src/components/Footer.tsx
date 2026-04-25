@@ -1,3 +1,15 @@
+/**
+ * LEARNER'S NOTE:
+ * Footer.tsx is the site-wide footer component displayed at the bottom of all pages.
+ *
+ * KEY CONCEPTS:
+ * - Grid layout: 4-column responsive grid (1 col mobile, 4 col desktop)
+ * - Sections: Brand/description, Quick Links, Resources, Contact info
+ * - Lucide icons: MapPin, Phone, Mail for contact information
+ * - Link components: Uses react-router-dom Link for internal navigation
+ * - Dynamic copyright: new Date().getFullYear() auto-updates the year
+ * - Tailwind spacing: py-8, gap-8, mt-8 for consistent spacing
+ */
 import { GraduationCap, Mail, MapPin, Phone } from "lucide-react";
 import { Link } from "react-router-dom";
 

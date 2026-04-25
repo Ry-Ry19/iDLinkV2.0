@@ -1,3 +1,16 @@
+/**
+ * LEARNER'S NOTE:
+ * StudentDashboard.tsx is the main dashboard for student users.
+ *
+ * KEY CONCEPTS:
+ * - Role enforcement: Redirects staff members to /staff/dashboard if they try to access
+ * - User state initialization: Reads user from localStorage on component mount
+ * - API integration: Fetches recent applications from /api/applications endpoint
+ * - Revalidation: POST to /api/applications/revalidate with user idno, fullname, and role
+ * - DashboardCard component: Reusable clickable cards for quick actions (Apply, Revalidate, Track, Notifications)
+ * - HighlightedName component: Displays the logged-in user's name with visual emphasis
+ * - Auto-refresh: After revalidation, refreshes application list to show updated status
+ */
 import DashboardCard from "@/components/DashboardCard";
 import Footer from "@/components/Footer";
 import HighlightedName from "@/components/HighlightedName";

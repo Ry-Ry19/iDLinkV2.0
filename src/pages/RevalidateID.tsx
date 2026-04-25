@@ -1,3 +1,15 @@
+/**
+ * LEARNER'S NOTE:
+ * RevalidateID.tsx allows existing users to request ID revalidation.
+ *
+ * KEY CONCEPTS:
+ * - Search functionality: User enters ID number, clicks Search to find their record
+ * - Mock data: Currently uses hardcoded mock user record (would connect to real API)
+ * - Conditional rendering: Shows user record card only after search is performed
+ * - StatusBadge component: Displays current approval status visually
+ * - Navigation: Redirects to /track after successful revalidation request
+ * - State management: Tracks idNumber input and userRecord result
+ */
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Navbar from "@/components/Navbar";

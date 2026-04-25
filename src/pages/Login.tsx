@@ -1,3 +1,17 @@
+/**
+ * LEARNER'S NOTE:
+ * Login.tsx handles user authentication.
+ *
+ * KEY CONCEPTS:
+ * - State management: Uses useState for email, password, and role
+ * - Form handling: onSubmit event triggers handleLogin function
+ * - API integration: POST request to /api/login with email/password
+ * - localStorage: Stores user info (fullname, role, idno, email) on successful login
+ * - Role-based navigation: Redirects to different dashboards based on user role
+ *   (student → /student/dashboard, employee → /employee/dashboard, staff → /staff/dashboard)
+ * - Toast notifications: Uses sonner for success/error feedback
+ * - UI layout: Two-column design - Login form on left, video/promo on right (hidden on mobile)
+ */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";

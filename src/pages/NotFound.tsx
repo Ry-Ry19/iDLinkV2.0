@@ -1,3 +1,13 @@
+/**
+ * LEARNER'S NOTE:
+ * NotFound.tsx is the catch-all 404 page shown when no routes match.
+ *
+ * KEY CONCEPTS:
+ * - useLocation: Accesses the current pathname to log the attempted route
+ * - useEffect: Side effect to log 404 errors to console for debugging
+ * - Simple layout: Centered text with "Return to Home" link
+ * - Route pattern: Rendered via <Route path="*" /> in App.tsx
+ */
 import { useLocation } from "react-router-dom";
 import { useEffect } from "react";
 

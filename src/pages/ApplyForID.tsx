@@ -1,3 +1,17 @@
+/**
+ * LEARNER'S NOTE:
+ * ApplyForID.tsx is a multi-section form for submitting new ID applications.
+ *
+ * KEY CONCEPTS:
+ * - Controlled inputs: Form state object with fields (firstName, lastName, email, etc.)
+ * - File uploads: Uses useRef to access file input elements for photo, signature, COR
+ * - File validation: Checks file size (max 5MB) and file type before processing
+ * - Image preview: Uses URL.createObjectURL() to show thumbnail previews of uploaded images
+ * - FormData: Uses FormData object to send files and text data together (multipart/form-data)
+ * - Multi-section card layout: Personal Information, ID Details, Document Uploads sections
+ * - Select components: Uses shadcn/ui Select for dropdowns (ID type, department)
+ * - Navigation: Redirects to /track after successful submission
+ */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";

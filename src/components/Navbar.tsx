@@ -1,3 +1,15 @@
+/**
+ * LEARNER'S NOTE:
+ * Navbar.tsx is the top navigation bar used across all pages.
+ *
+ * KEY CONCEPTS:
+ * - Props interface: Accepts isLoggedIn, userRole, and userName from parent
+ * - Theme toggle: Manages dark/light mode via classList and localStorage
+ * - Conditional rendering: Shows Login/Apply buttons when not logged in, user dropdown when logged in
+ * - DropdownMenu: Uses shadcn/ui for user account options (Profile, Logout)
+ * - Dark mode implementation: Toggles "dark" class on document.documentElement
+ * - handleLogout: Clears session and navigates back to home page ("/")
+ */
 import HighlightedName from "@/components/HighlightedName";
 import { Button } from "@/components/ui/button";
 import {

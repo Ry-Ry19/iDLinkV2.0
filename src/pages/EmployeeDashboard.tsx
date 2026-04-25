@@ -1,3 +1,16 @@
+/**
+ * LEARNER'S NOTE:
+ * EmployeeDashboard.tsx is the main dashboard for employee users.
+ *
+ * KEY CONCEPTS:
+ * - Similar structure to StudentDashboard but with additional contract monitoring features
+ * - Role enforcement: Redirects non-employee users to their appropriate dashboards
+ * - Contract alert: Shows warning banner when contract expires within 60 days
+ * - Additional DashboardCard: "Contract Info" card for viewing contract details
+ * - Alert component: Uses shadcn/ui Alert for warning messages with icon
+ * - Navigation: Quick access buttons for Apply, Track, and Contract pages
+ * - Revalidation: Same API endpoint as students for ID renewal
+ */
 import DashboardCard from "@/components/DashboardCard";
 import Footer from "@/components/Footer";
 import HighlightedName from "@/components/HighlightedName";

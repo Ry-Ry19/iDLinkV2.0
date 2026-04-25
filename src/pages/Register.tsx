@@ -1,3 +1,16 @@
+/**
+ * LEARNER'S NOTE:
+ * Register.tsx handles new user registration.
+ *
+ * KEY CONCEPTS:
+ * - Form fields: idno, fullname, email, password, and conditional fields (course/year for students)
+ * - Role selection: RadioGroup allows choosing between student, employee, or staff
+ * - Conditional rendering: Course and year fields only show when role is "student"
+ * - API integration: POST request to /api/register with all form data
+ * - Navigation: Redirects to /login page after successful registration
+ * - Loading state: Shows "Registering..." text while request is in progress
+ * - Input validation: Checks all required fields before submission
+ */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
