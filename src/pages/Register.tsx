@@ -6,7 +6,7 @@
  * - Form fields: idno, fullname, email, password, and conditional fields (course/year for students)
  * - Role selection: RadioGroup allows choosing between student, employee, or staff
  * - Conditional rendering: Course and year fields only show when role is "student"
- * - API integration: POST request to /api/register with all form data
+ * - API integration: Supabase signUp with email/password and profile data in user_metadata
  * - Navigation: Redirects to /login page after successful registration
  * - Loading state: Shows "Registering..." text while request is in progress
  * - Input validation: Checks all required fields before submission
@@ -22,6 +22,7 @@ import { GraduationCap } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
 
 const Register = () => {
   const navigate = useNavigate();
@@ -51,33 +52,31 @@ const Register = () => {
     setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:5000/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          idno,
-          fullname,
-          email,
-          password,
-          course: role === "student" ? course : null,
-          year: role === "student" ? year : null,
-          role,
-        }),
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            fullname,
+            idno,
+            course: role === "student" ? course : null,
+            year: role === "student" ? year : null,
+            role,
+          }
+        }
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        toast.error(data.message || "Registration failed");
-      } else {
-        toast.success(data.message);
-
-        // Redirect to Login page after successful registration
-        navigate("/login");
+      if (error) {
+        throw error;
       }
-    } catch (err) {
+
+      toast.success("Registration successful! Please check your email to confirm your account.");
+
+      // Redirect to Login page after successful registration
+      navigate("/login");
+    } catch (err: any) {
       console.error(err);
-      toast.error("Server unreachable");
+      toast.error(err.message || "Registration failed");
     } finally {
       setLoading(false);
     }

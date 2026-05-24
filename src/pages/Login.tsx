@@ -5,8 +5,8 @@
  * KEY CONCEPTS:
  * - State management: Uses useState for email, password, and role
  * - Form handling: onSubmit event triggers handleLogin function
- * - API integration: POST request to /api/login with email/password
- * - localStorage: Stores user info (fullname, role, idno, email) on successful login
+ * - API integration: Supabase signInWithPassword for authentication
+ * - localStorage: Stores user info (fullname, role, idno, email) on successful login (from user_metadata)
  * - Role-based navigation: Redirects to different dashboards based on user role
  *   (student → /student/dashboard, employee → /employee/dashboard, staff → /staff/dashboard)
  * - Toast notifications: Uses sonner for success/error feedback
@@ -32,6 +32,7 @@ import { GraduationCap } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -49,39 +50,49 @@ const Login = () => {
     }
 
     try {
-      const res = await fetch("http://localhost:5000/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password })
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        toast.error(data.message || "Login failed");
-        return;
+      if (error) {
+        throw error;
       }
+
+      const user = data.user;
+      // Extract profile data from user_metadata (set during sign up)
+      const { fullname, role: userRole, idno } = user.user_metadata || {};
+
+      // Fallback to email from user object if needed
+      const userEmail = user.email || email;
 
       localStorage.setItem(
         "user",
         JSON.stringify({
-          fullname: data.fullname,
-          role: data.role,
-          idno: data.idno,
-          email
+          fullname,
+          role: userRole,
+          idno,
+          email: userEmail,
         })
       );
 
-      toast.success(data.message);
+      toast.success("Login successful");
 
-      if (data.role === "student") navigate("/student/dashboard");
-      else if (data.role === "employee") navigate("/employee/dashboard");
-      else if (data.role === "staff") navigate("/staff/dashboard");
+      if (userRole === "student") navigate("/student/dashboard");
+      else if (userRole === "employee") navigate("/employee/dashboard");
+      else if (userRole === "staff") navigate("/staff/dashboard");
       else toast.error("Unknown role");
 
-    } catch (error) {
-      console.error(error);
-      toast.error("Server error");
+    } catch (err: any) {
+      console.error(err);
+
+      // Handle specific Supabase errors
+      if (err.message?.includes("email not confirmed") ||
+          err.message?.includes("Email not confirmed")) {
+        toast.error("Please check your email to confirm your account before logging in. Check your inbox (and spam folder) for a confirmation link.");
+      } else {
+        toast.error(err.message || "Login failed");
+      }
     }
   };
 
