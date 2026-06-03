@@ -23,6 +23,7 @@ import { Upload } from "lucide-react";
 import { useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 
@@ -74,48 +75,112 @@ const ApplyForID = () => {
     }
   };
 
+  // Helper logic processing binary streams directly to Supabase cloud folder buckets
+  const uploadToStorage = async (file: File, folder: string, userId: string): Promise<string | null> => {
+    const fileExtension = file.name.split(".").pop();
+    const filePath = `${folder}/${userId}-${Date.now()}.${fileExtension}`;
+
+    const { error } = await supabase.storage
+      .from("id-documents")
+      .upload(filePath, file, { cacheControl: "3600", upsert: true });
+
+    if (error) {
+      console.error(`Storage Error (${folder}):`, error.message);
+      return null;
+    }
+
+    const { data: { publicUrl } } = supabase.storage
+      .from("id-documents")
+      .getPublicUrl(filePath);
+
+    return publicUrl;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
 
     try {
-      const formPayload = new FormData();
-      Object.entries(formData).forEach(([key, value]) => formPayload.append(key, value));
-
-      if (photoRef.current?.files?.[0]) formPayload.append("photo", photoRef.current.files[0]);
-      if (signatureRef.current?.files?.[0]) formPayload.append("signature", signatureRef.current.files[0]);
-      if (corRef.current?.files?.[0]) formPayload.append("cor", corRef.current.files[0]);
-
-      const res = await fetch("http://localhost:5000/api/applications", {
-        method: "POST",
-        body: formPayload,
-      });
-
-      const data = await res.json();
-
-      if (res.ok) {
-        toast.success(data.message || "Application submitted successfully!");
-        setFormData({
-          firstName: "",
-          lastName: "",
-          middleName: "",
-          idType: "",
-          department: "",
-          studentNumber: "",
-          email: "",
-          phone: "",
-        });
-        setPreviews({ photo: "", signature: "", cor: "" });
-        if (photoRef.current) photoRef.current.value = "";
-        if (signatureRef.current) signatureRef.current.value = "";
-        if (corRef.current) corRef.current.value = "";
-        navigate("/track");
-      } else {
-        toast.error(data.message || "Failed to submit application");
+      // 1. Fetch user active session context
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast.error("Session expired. Please log in again.");
+        return;
       }
+
+      // 2. Extract files from reference points
+      const rawPhoto = photoRef.current?.files?.[0];
+      const rawSignature = signatureRef.current?.files?.[0];
+      const rawCor = corRef.current?.files?.[0];
+
+      if (!rawPhoto || !rawSignature) {
+        toast.error("2x2 Photo and E-Signature are required.");
+        return;
+      }
+
+      // 3. Parallel execute asset storage updates
+      toast.info("Uploading attachments...");
+      const photoUrl = await uploadToStorage(rawPhoto, "photos", user.id);
+      const signatureUrl = await uploadToStorage(rawSignature, "signatures", user.id);
+      const corUrl = rawCor ? await uploadToStorage(rawCor, "cor_files", user.id) : null;
+
+      if (!photoUrl || !signatureUrl) {
+        toast.error("File upload failed. Ensure 'id-documents' bucket exists and is Public.");
+        return;
+      }
+
+      // 4. Construct parameters for public database table mapping requirements
+      const midName = formData.middleName.trim() ? ` ${formData.middleName.trim()}` : "";
+      const constructedFullName = `${formData.firstName.trim()}${midName} ${formData.lastName.trim()}`;
+      const generatedIdDisplay = `ID-${Date.now()}`;
+
+      // FIXED: Dynamic database column filtering based on ID registration context
+      const isStudent = formData.idType === "student";
+
+      // 5. Fire query insertion matching Supabase schema types exactly
+      const { error: dbError } = await supabase
+        .from("applications")
+        .insert({
+          user_id: user.id,
+          id_display: generatedIdDisplay,
+          fullname: constructedFullName,
+          idno: formData.studentNumber,
+          email: formData.email,
+          course: isStudent ? formData.department : null,       // Student selection goes to course
+          department: !isStudent ? formData.department : null, // Faculty/Employee selection goes to department
+          status: "submitted",
+          photo: photoUrl,
+          signature: signatureUrl,
+          cor: corUrl,
+        });
+
+      if (dbError) {
+        toast.error(`Database Error: ${dbError.message}`);
+        return;
+      }
+
+      toast.success("ID Application successfully tracked inside Supabase!");
+      
+      // Reset UI elements state completely
+      setFormData({
+        firstName: "",
+        lastName: "",
+        middleName: "",
+        idType: "",
+        department: "",
+        studentNumber: "",
+        email: "",
+        phone: "",
+      });
+      setPreviews({ photo: "", signature: "", cor: "" });
+      if (photoRef.current) photoRef.current.value = "";
+      if (signatureRef.current) signatureRef.current.value = "";
+      if (corRef.current) corRef.current.value = "";
+      
+      navigate("/track");
     } catch (err) {
       console.error(err);
-      toast.error("Server error. Please try again later.");
+      toast.error("Internal processing error compiling payload updates.");
     } finally {
       setSubmitting(false);
     }

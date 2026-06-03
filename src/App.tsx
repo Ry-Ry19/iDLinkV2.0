@@ -36,6 +36,7 @@ import StaffDashboard from "./pages/StaffDashboard";
 import StudentDashboard from "./pages/StudentDashboard";
 import Team from "./pages/Team";
 import TrackStatus from "./pages/TrackStatus";
+import Profile from "./pages/Profile";
 
 
 const queryClient = new QueryClient();
@@ -54,7 +55,8 @@ const App = () => (
           <Route path="/revalidate" element={<RevalidateID />} />
           <Route path="/track" element={<TrackStatus />} />
           <Route path="/contract" element={<ContractExpiration />} />
-          
+          <Route path="/profile" element={<Profile />} />
+
           {/* Student Routes */}
           <Route path="/student/dashboard" element={<StudentDashboard />} />
           
