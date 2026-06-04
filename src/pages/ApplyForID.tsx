@@ -146,8 +146,7 @@ const ApplyForID = () => {
           fullname: constructedFullName,
           idno: formData.studentNumber,
           email: formData.email,
-          course: isStudent ? formData.department : null,       // Student selection goes to course
-          department: !isStudent ? formData.department : null, // Faculty/Employee selection goes to department
+          department_or_course: formData.department,
           status: "submitted",
           photo: photoUrl,
           signature: signatureUrl,
@@ -269,7 +268,7 @@ const ApplyForID = () => {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="idType">ID Type *</Label>
-                    <Select value={formData.idType} onValueChange={(val) => setFormData({ ...formData, idType: val })}>
+                    <Select value={formData.idType} onValueChange={(val) => setFormData({ ...formData, idType: val, department: "" })}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select ID type" />
                       </SelectTrigger>
@@ -281,29 +280,50 @@ const ApplyForID = () => {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="department">Department/College *</Label>
-                    <Select value={formData.department} onValueChange={(val) => setFormData({ ...formData, department: val })}>
+                    <Label htmlFor="department">{formData.idType === "student" ? "College/Course" : "Office/Department"}
+                    </Label>
+                    <Select value={formData.department} onValueChange={(val) => setFormData({ ...formData, department: val })} disabled={!formData.idType}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select department" />
+                        <SelectValue placeholder={formData.idType ? "Select options..." : "Choose ID Type First"} />  
                       </SelectTrigger>
                       <SelectContent>
+                        {formData.idType === "student" && (
+                        <> 
+                        <SelectItem value="ccs">College of Computer Studies</SelectItem>
                         <SelectItem value="coe">College of Engineering</SelectItem>
-                        <SelectItem value="cas">College of Arts and Sciences</SelectItem>
-                        <SelectItem value="cba">College of Business Administration</SelectItem>
-                        <SelectItem value="ictc">ICTC</SelectItem>
+                        <SelectItem value="chs">College of Health Sciences</SelectItem>
+                        <SelectItem value="cass">College of Arts and Social Sciences</SelectItem>
+                        <SelectItem value="cbaa">College of Business Administration</SelectItem> 
+                        <SelectItem value="csm">College of Science and Mathematics</SelectItem>
+                        <SelectItem value="ced">College of Education</SelectItem>
+                        </>
+                        )}
+                        {(formData.idType === "employee" || formData.idType === "faculty") &&( 
+                        <>
+                         <SelectItem value="admin">Main Administration Office</SelectItem>
+                         <SelectItem value="ictc">Information and Communications Technology Council</SelectItem>
+                         <SelectItem value="ovcaa"> Office of the Vice Chancellor for Academic Affairs</SelectItem>
+                         <SelectItem value="oasg">Office of Admissions, Scholarships, and Grants</SelectItem>
+                         <SelectItem value="our">Office of University the Registrar</SelectItem>
+                         <SelectItem value="hr">Human Resources (HR)</SelectItem>
+                         <SelectItem value="security">Security & Facilities</SelectItem>
+                        </>
+                        )}
+                       
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="studentNumber">Student/Employee Number *</Label>
+                  <Label htmlFor="studentNumber">{formData.idType === "student" ? "Student Number *" : "Employee Number *"}</Label>
                   <Input
                     id="studentNumber"
                     value={formData.studentNumber}
                     onChange={(e) => setFormData({ ...formData, studentNumber: e.target.value })}
-                    placeholder="e.g., 2021-12345"
+                    placeholder= {formData.idType === "student" ? "e.g., 2024-2855" : "e.g., EMP-9982"}
                     required
+                    disabled={!formData.idType}
                   />
                 </div>
               </CardContent>
