@@ -96,31 +96,62 @@ const StaffDashboard = () => {
     loadUser();
   }, [navigate]);
 
-  // Fetch dashboard data from backend (callable). Use `silent` to avoid loading state during polling.
+  // Fetch dashboard data from Supabase
   const loadDashboard = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [appsRes, usersRes] = await Promise.all([
-        fetch("http://localhost:5000/api/applications"),
-        fetch("http://localhost:5000/api/users/count"),
-      ]);
+      // Try to fetch applications from Supabase
+      let apps: any[] = [];
+      let appsError = null;
 
-      if (!appsRes.ok) throw new Error("Failed to fetch applications");
-      if (!usersRes.ok) throw new Error("Failed to fetch users count");
+      try {
+        const { data, error } = await supabase
+          .from('applications')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-      const apps = await appsRes.json();
-      const usersJson = await usersRes.json();
+        if (error) {
+          // If applications table doesn't exist, we'll use empty array
+          if (error.code === '42P01') { // undefined_table
+            console.warn('Applications table not found');
+            apps = [];
+          } else {
+            throw error;
+          }
+        } else {
+          apps = data;
+        }
+      } catch (err) {
+        console.warn('Error fetching applications:', err);
+        apps = [];
+      }
 
+      // Get total users count from profiles table (which we know exists)
+      let totalUsers = 0;
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('id', { count: 'exact' });
+
+        if (error) throw error;
+        totalUsers = data.length;
+      } catch (err) {
+        console.error('Error fetching users count:', err);
+        totalUsers = 0;
+      }
+
+      // Calculate stats from applications data
       // pending = submitted + under_review
       const pending = apps.filter((a: any) => a.status === "submitted" || a.status === "under_review").length;
 
       // approvedToday = approved where date is today
       const today = new Date().toISOString().slice(0, 10);
-      const approvedToday = apps.filter((a: any) => a.status === "approved" && (a.date === today || (a.created_at && a.created_at.slice(0,10) === today))).length;
+      const approvedToday = apps.filter((a: any) =>
+        a.status === "approved" &&
+        (a.date === today || (a.created_at && a.created_at.slice(0,10) === today))
+      ).length;
 
       const returned = apps.filter((a: any) => a.status === "returned").length;
-
-      const totalUsers = usersJson.count ?? 0;
 
       setStats({ pending, approvedToday, returned, totalUsers });
 
@@ -134,7 +165,10 @@ const StaffDashboard = () => {
 
       setRecentActivity(recent);
     } catch (err) {
-      console.error(err);
+      console.error('Error in loadDashboard:', err);
+      // Set default stats in case of error
+      setStats({ pending: 0, approvedToday: 0, returned: 0, totalUsers: 0 });
+      setRecentActivity([]);
     } finally {
       if (!silent) setLoading(false);
     }

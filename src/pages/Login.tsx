@@ -36,7 +36,7 @@ import { supabase } from "@/lib/supabaseClient";
 
 const Login = () => {
   const navigate = useNavigate();
-
+  const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"student" | "employee" | "staff">("student");
@@ -48,6 +48,7 @@ const Login = () => {
       toast.error("Please enter email and password");
       return;
     }
+    setLoading(true);
 
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -55,49 +56,51 @@ const Login = () => {
         password,
       });
 
-      if (error) {
-        throw error;
-      }
+      if (error) throw error;
+      if (!data.user) throw new Error("No user data returned");
 
-      const user = data.user;
-      // Extract profile data from user_metadata (set during sign up)
-      const { fullname, role: userRole, idno } = user.user_metadata || {};
+// 🚀 Fetch the authentic database profile role record
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("fullname, role, idno")
+        .eq("id", data.user.id)
+        .single();
 
-      // Fallback to email from user object if needed
-      const userEmail = user.email || email;
+        if (profileError || !profile) {
+          throw new Error("Profile records not found in database. Please signup first.");
+        }
 
       localStorage.setItem(
         "user",
         JSON.stringify({
-          fullname,
-          role: userRole,
-          idno,
-          email: userEmail,
+          fullname: profile.fullname,
+          role: profile.role,
+          idno: profile.idno,
+          email: data.user.email,
         })
       );
 
       toast.success("Login successful");
-
+// 🚀 Route strictly using database validation values
        let redirectPath = "/login"; // fallback
-      if (role === "student") {
+      if (profile.role === "student") {
         redirectPath = "/student/dashboard";
-      } else if (role === "employee") {
+      } else if (profile.role === "employee") {
         redirectPath = "/employee/dashboard";
-      } else if (role === "staff") {
+      } else if (profile.role === "staff") {
         redirectPath = "/staff/dashboard";
       }
       navigate(redirectPath);
 
     } catch (err: any) {
       console.error(err);
-
-      // Handle specific Supabase errors
-      if (err.message?.includes("email not confirmed") ||
-          err.message?.includes("Email not confirmed")) {
-        toast.error("Please check your email to confirm your account before logging in. Check your inbox (and spam folder) for a confirmation link.");
+      if (err.message?.toLowerCase().includes("email not confirmed")) {
+        toast.error("Please check your email to confirm your account before logging in.");
       } else {
         toast.error(err.message || "Login failed");
       }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -183,8 +186,9 @@ const Login = () => {
                 <Button
                   type="submit"
                   className="w-full gradient-primary text-primary-foreground"
+                  disabled={loading}
                 >
-                  Login
+                  {loading ? "Logging in..." : "Login"}
                 </Button>
 
                 <div className="text-center text-sm">
