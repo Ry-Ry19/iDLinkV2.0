@@ -78,10 +78,15 @@ const Login = () => {
 
       toast.success("Login successful");
 
-      if (userRole === "student") navigate("/student/dashboard");
-      else if (userRole === "employee") navigate("/employee/dashboard");
-      else if (userRole === "staff") navigate("/staff/dashboard");
-      else toast.error("Unknown role");
+       let redirectPath = "/login"; // fallback
+      if (role === "student") {
+        redirectPath = "/student/dashboard";
+      } else if (role === "employee") {
+        redirectPath = "/employee/dashboard";
+      } else if (role === "staff") {
+        redirectPath = "/staff/dashboard";
+      }
+      navigate(redirectPath);
 
     } catch (err: any) {
       console.error(err);

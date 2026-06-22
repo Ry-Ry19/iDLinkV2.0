@@ -22,6 +22,7 @@ import { BarChart3, Bell, Calendar, FileText, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
 
 interface User {
   fullname: string;
@@ -41,27 +42,62 @@ interface Application {
 const EmployeeDashboard = () => {
   const navigate = useNavigate();
 
-  const [user, setUser] = useState<User | null>(() => {
-    const storedUser = localStorage.getItem("user");
-    return storedUser ? JSON.parse(storedUser) : null;
-  });
+  const [user, setUser] = useState<User | null>(null);
   const [recentApplications, setRecentApplications] = useState<Application[]>([]);
 
+  // Load logged-in user from Supabase auth and profile
   useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      const parsed = JSON.parse(storedUser);
-      // Verify user role is employee or student (not staff)
-      if (parsed.role === "staff") {
+    const loadUser = async () => {
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
+
+      if (!authUser) {
+        navigate("/login");
+        return;
+      }
+
+      // Fetch profile from profiles table
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
+
+      if (error) {
+        console.error("Error fetching profile:", error);
+        navigate("/login");
+        return;
+      }
+
+      // Map profile to User interface (adjust as needed)
+      const userData = {
+        fullname: profile.fullname,
+        role: profile.role as "student" | "employee" | "staff",
+        idno: profile.idno,
+        email: authUser.email ?? "",
+      };
+
+      setUser(userData);
+      // Store in localStorage for consistency with other parts
+      localStorage.setItem("user", JSON.stringify(userData));
+
+      // Role verification for employee dashboard
+      if (profile.role === "staff") {
         // Redirect staff to their dashboard
         navigate("/staff/dashboard", { replace: true });
         return;
       }
-      setUser(parsed);
-      fetchRecentApplications(parsed.idno);
-    } else {
-      navigate("/login");
-    }
+      if (profile.role !== "employee" && profile.role !== "student") {
+        // Unexpected role, redirect to login
+        navigate("/login");
+        return;
+      }
+
+      fetchRecentApplications(profile.idno);
+    };
+
+    loadUser();
   }, [navigate]);
 
   // Fetch user's recent applications from backend

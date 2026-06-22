@@ -20,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CheckCircle, Clock, Users, XCircle } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "@/lib/supabaseClient";
 
 function formatRelative(dateStr?: string) {
   if (!dateStr) return "";
@@ -48,23 +49,51 @@ const StaffDashboard = () => {
   const [recentActivity, setRecentActivity] = useState<Array<any>>([]);
   const [loading, setLoading] = useState(false);
 
-  // Load user info from localStorage
+  // Load user info from Supabase auth and profile
   useEffect(() => {
-    const storedUser = localStorage.getItem("user");
+    const loadUser = async () => {
+      const {
+        data: { user: authUser },
+      } = await supabase.auth.getUser();
 
-    if (!storedUser) {
-      navigate("/login");
-      return;
-    }
+      if (!authUser) {
+        navigate("/login");
+        return;
+      }
 
-    const parsed = JSON.parse(storedUser);
-    setUserName(parsed.fullname);
-    setUserRole(parsed.role);
+      // Fetch profile from profiles table
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .single();
 
-    // ❗ Prevent students/employees from accessing staff dashboard
-    if (parsed.role !== "staff") {
-      navigate("/");
-    }
+      if (error) {
+        console.error("Error fetching profile:", error);
+        navigate("/login");
+        return;
+      }
+
+      // Set user name and role
+      setUserName(profile.fullname);
+      setUserRole(profile.role as "student" | "employee" | "staff");
+
+      // Store in localStorage for consistency with other parts
+      const userData = {
+        fullname: profile.fullname,
+        role: profile.role,
+        idno: profile.idno,
+        email: authUser.email ?? "",
+      };
+      localStorage.setItem("user", JSON.stringify(userData));
+
+      // ❗ Prevent students/employees from accessing staff dashboard
+      if (profile.role !== "staff") {
+        navigate("/");
+      }
+    };
+
+    loadUser();
   }, [navigate]);
 
   // Fetch dashboard data from backend (callable). Use `silent` to avoid loading state during polling.

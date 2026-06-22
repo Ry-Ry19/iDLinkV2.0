@@ -52,7 +52,7 @@ const Register = () => {
     setLoading(true);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -66,18 +66,71 @@ const Register = () => {
         }
       });
 
-      if (error) {
-        throw error;
+            if (signUpError) {
+        throw signUpError;
+      }
+
+      // REMOVE OR REPLACE the strict check that was crashing your app:
+      // if (!signUpData?.user) { throw new Error(...) }
+      
+      // USE THIS INSTEAD:
+      let userId = signUpData?.user?.id;
+
+      // If user data isn't returned immediately (because confirmation is active), 
+      // check the identities array where Supabase stores unconfirmed user details.
+      if (!userId && signUpData?.user?.identities?.[0]) {
+        userId = signUpData.user.identities[0].id;
+      }
+
+      // If we still can't find a user ID, gracefully fall back to a confirmation screen
+      if (!userId) {
+        toast.success("Registration initiated! Please check your email to confirm your account.");
+        navigate("/login");
+        return;
+      }
+
+      // Create profile entry in the profiles table using our resolved userId
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .insert([
+          {
+            id: userId,
+            fullname,
+            idno,
+            role,
+            course: role === "student" ? course : null,
+            year: role === "student" ? year : null,
+          }
+        ]);
+         if (profileError) {
+        throw profileError;
       }
 
       toast.success("Registration successful! Please check your email to confirm your account.");
 
-      // Redirect to Login page after successful registration
-      navigate("/login");
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || "Registration failed");
-    } finally {
+      // Redirect to appropriate dashboard based on role after successful registration
+      let redirectPath = "/login"; // fallback
+      if (role === "student") {
+        redirectPath = "/student/dashboard";
+      } else if (role === "employee") {
+        redirectPath = "/employee/dashboard";
+      } else if (role === "staff") {
+        redirectPath = "/staff/dashboard";
+      }
+      navigate(redirectPath);
+    }  catch (err: any) {
+    console.error('Registration error:', err);
+
+    // Extract detailed Supabase error if available
+    const errorMessage = err.message || 'Registration failed';
+    if (err?.error?.message) {
+      toast.error(`Database error: ${err.error.message}`);
+    } else if (err?.response?.data?.message) {
+      toast.error(`Database error: ${err.response.data.message}`);
+    } else {
+      toast.error(errorMessage);
+    }
+  } finally {
       setLoading(false);
     }
   };
