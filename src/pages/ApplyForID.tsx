@@ -159,7 +159,7 @@ const ApplyForID = () => {
       }
 
       toast.success("ID Application successfully tracked inside Supabase!");
-      
+
       // Reset UI elements state completely
       setFormData({
         firstName: "",
@@ -175,8 +175,25 @@ const ApplyForID = () => {
       if (photoRef.current) photoRef.current.value = "";
       if (signatureRef.current) signatureRef.current.value = "";
       if (corRef.current) corRef.current.value = "";
-      
-      navigate("/track");
+
+      // Fetch user profile to determine role for redirection
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      let redirectPath = "/track"; // fallback
+      if (!profileError && profile) {
+        if (profile.role === "student") {
+          redirectPath = "/student/dashboard";
+        } else if (profile.role === "employee") {
+          redirectPath = "/employee/dashboard";
+        } else if (profile.role === "staff") {
+          redirectPath = "/staff/dashboard";
+        }
+      }
+      navigate(redirectPath);
     } catch (err) {
       console.error(err);
       toast.error("Internal processing error compiling payload updates.");

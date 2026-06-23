@@ -94,6 +94,54 @@ const EmployeeDashboard = () => {
         return;
       }
 
+      // Debug: inspect applications table structure and data
+      const inspectApplications = async () => {
+        try {
+          console.log('Debug: User IDNO from profile:', profile.idno);
+          // Check if applications table exists and get sample row
+          const { data: sampleData, error: sampleError } = await supabase
+            .from('applications')
+            .select('*')
+            .limit(1);
+
+          if (sampleError) {
+            console.error('Debug: Error querying applications table:', sampleError);
+          } else {
+            console.log('Debug: Applications table sample data:', sampleData);
+            if (sampleData.length > 0) {
+              console.log('Debug: Columns present in applications table:', Object.keys(sampleData[0]));
+            } else {
+              // No rows, check total count
+              const { data: countData, error: countError } = await supabase
+                .from('applications')
+                .select('*', { count: 'exact', head: true });
+              if (!countError) {
+                console.log('Debug: Total rows in applications table:', countData?.length ?? 0);
+              }
+            }
+          }
+
+          // Also check for any rows matching this user IDNO
+          const { data: userData, error: userError } = await supabase
+            .from('applications')
+            .select('*')
+            .eq('idno', profile.idno)
+            .limit(5);
+
+          if (userError) {
+            console.error('Debug: Error fetching user applications:', userError);
+          } else {
+            console.log('Debug: Applications for current user (limit 5):', userData);
+            console.log('Debug: Number of applications for user:', userData.length);
+          }
+        } catch (err) {
+          console.error('Debug: Exception during application inspection:', err);
+        }
+      };
+
+      // Run inspection
+      await inspectApplications();
+
       fetchRecentApplications(profile.idno);
     };
 
@@ -102,35 +150,101 @@ const EmployeeDashboard = () => {
 
   // Fetch user's recent applications from Supabase
   const fetchRecentApplications = async (idno: string) => {
+    if (!idno) {
+      console.warn('fetchRecentApplications called with empty idno');
+      setRecentApplications([]);
+      return;
+    }
+
     try {
-      // Try to fetch from applications table in Supabase
-      const { data, error } = await supabase
+      console.log('Fetching applications for idno:', idno);
+      let { data, error } = await supabase
         .from('applications')
         .select('*')
         .eq('idno', idno)
-        .order('created_at', { ascending: false });
+        .order('id', { ascending: false }); // Try to order by id descending (assuming id exists)
 
-      if (error) {
-        // If applications table doesn't exist or other error, show empty state
-        console.warn('Applications table not available or error:', error);
+      // If we got a column/table error for id, try without ordering
+      if (error && (error.code === '42P01' || error.code === '42703')) {
+        console.log('Failed to order by id, trying without order by');
+        const { data: dataFallback, error: errorFallback } = await supabase
+          .from('applications')
+          .select('*')
+          .eq('idno', idno);
+
+        if (errorFallback) {
+          console.error('Error fetching applications (fallback):', errorFallback);
+          // Check if it's a table/column missing error
+          if (errorFallback.code === '42P01' || errorFallback.code === '42703') {
+            toast.warning("Applications table or columns not yet configured properly");
+          } else {
+            toast.error("Failed to load your applications: " + errorFallback.message);
+          }
+          setRecentApplications([]);
+          return;
+        } else {
+          data = dataFallback;
+          error = null; // Clear the error since fallback succeeded
+          console.log('Applications data received (without ordering):', data);
+        }
+      } else if (error) {
+        // Some other error
+        console.error('Error fetching applications:', error);
+        // Check if it's a table/column missing error
+        if (error.code === '42P01' || error.code === '42703') {
+          toast.warning("Applications table or columns not yet configured properly");
+        } else {
+          toast.error("Failed to load your applications: " + error.message);
+        }
         setRecentApplications([]);
         return;
+      } else {
+        console.log('Applications data received:', data);
       }
 
-      // Map Supabase data to Application interface
-      const applications: Application[] = data.map(app => ({
-        id: app.id,
-        id_display: app.id_display || app.id.toString(),
-        fullname: app.fullname,
-        idno: app.idno,
-        status: app.status as Application['status'],
-        date: app.date || app.created_at || new Date().toISOString(),
-      }));
+      // Map Supabase data to Application interface with defensive checks
+      const applications: Application[] = (data || []).map(app => {
+        // Safely get each field with fallbacks
+        const id = app.id !== undefined && app.id !== null ? Number(app.id) : 0;
+        const id_display = app.id_display !== undefined && app.id_display !== null
+                          ? String(app.id_display)
+                          : (app.id !== undefined && app.id !== null ? String(app.id) : 'Unknown');
+        const fullname = app.fullname !== undefined && app.fullname !== null
+                        ? String(app.fullname)
+                        : 'Unknown User';
+        const appIdno = app.idno !== undefined && app.idno !== null
+                    ? String(app.idno)
+                    : 'Unknown ID';
+        // Handle status - ensure it's one of the valid values
+        const validStatuses = ["submitted", "under_review", "approved", "returned", "rejected", "expired"] as const;
+        const status = app.status && validStatuses.includes(app.status as any)
+                      ? (app.status as Application['status'])
+                      : 'submitted'; // default fallback
+        // Handle date with multiple fallbacks
+        let dateString = '';
+        if (app.date && typeof app.date === 'string') {
+          dateString = new Date(app.date).toLocaleDateString();
+        } else if (app.created_at && typeof app.created_at === 'string') {
+          dateString = new Date(app.created_at).toLocaleDateString();
+        } else {
+          dateString = new Date().toLocaleDateString();
+        }
 
+        return {
+          id,
+          id_display,
+          fullname,
+          idno: appIdno,
+          status,
+          date: dateString
+        };
+      });
+
+      console.log('Mapped applications:', applications);
       setRecentApplications(applications);
     } catch (err) {
-      console.error(err);
-      toast.error("Failed to load your applications");
+      console.error('Unexpected error in fetchRecentApplications:', err);
+      toast.error("An unexpected error occurred while loading applications");
       setRecentApplications([]);
     }
   };
@@ -151,14 +265,14 @@ const EmployeeDashboard = () => {
             role: user.role,
             status: 'submitted' as const,
             date: new Date().toISOString(),
-            created_at: new Date().toISOString(),
+            // created_at column does not exist, omitted
           }
         ]);
 
       if (error) {
-        // If applications table doesn't exist, show a message
-        if (error.code === '42P01') { // undefined_table
-          toast.success("Revalidation request submitted! (Applications table not yet configured)");
+        // If applications table doesn't exist or column missing, show a message
+        if (error.code === '42P01' || error.code === '42703') { // undefined_table or undefined_column
+          toast.success("Revalidation request submitted! (Applications table or columns not yet configured)");
         } else {
           throw error;
         }
@@ -170,11 +284,13 @@ const EmployeeDashboard = () => {
       fetchRecentApplications(user.idno);
     } catch (err: any) {
       console.error(err);
-      // Handle case where applications table doesn't exist
-      if (err?.code === '42P01') {
-        toast.success("Revalidation request submitted! (Applications table not yet configured)");
+      // Handle case where applications table doesn't exist or column missing
+      if (err?.code === '42P01' || err?.code === '42703') {
+        toast.success("Revalidation request submitted! (Applications table or columns not yet configured)");
         // Still refresh applications (will show empty state)
-        fetchRecentApplications(user.idno);
+        if (user?.idno) {
+          fetchRecentApplications(user.idno);
+        }
       } else {
         toast.error(err.message || "Server error");
       }
@@ -227,12 +343,6 @@ const EmployeeDashboard = () => {
               description="Submit new ID application"
               icon={FileText}
               onClick={() => navigate("/apply")}
-            />
-            <DashboardCard
-              title="Revalidate ID"
-              description="Renew your existing ID"
-              icon={RefreshCw}
-              onClick={handleRevalidate}
             />
             <DashboardCard
               title="Track Status"
@@ -288,16 +398,6 @@ const EmployeeDashboard = () => {
               </div>
             </CardContent>
           </Card>
-
-          {/* Footer Revalidate Button */}
-          <div className="mt-6 text-center">
-            <button
-              onClick={handleRevalidate}
-              className="px-6 py-2 bg-primary text-white rounded-md hover:bg-primary/80 transition"
-            >
-              Revalidate ID
-            </button>
-          </div>
         </div>
       </main>
 

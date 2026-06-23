@@ -100,69 +100,102 @@ const StaffDashboard = () => {
   const loadDashboard = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      // Try to fetch applications from Supabase
-      let apps: any[] = [];
-      let appsError = null;
+      // Fetch applications and users count simultaneously using Promise.all
+      const [appsResult, usersResult] = await Promise.all([
+        // Try to fetch applications from Supabase
+        (async () => {
+          try {
+            console.log('Fetching applications from applications table');
+            const { data, error } = await supabase
+              .from('applications')
+              .select('*')
+              .order('id', { ascending: false }); // Try to order by id descending (assuming id exists)
 
-      try {
-        const { data, error } = await supabase
-          .from('applications')
-          .select('*')
-          .order('created_at', { ascending: false });
+            // If we got a column/table error for id, try without ordering
+            if (error && (error.code === '42P01' || error.code === '42703')) {
+              console.log('Failed to order by id, trying without order by');
+              const { data: dataFallback, error: errorFallback } = await supabase
+                .from('applications')
+                .select('*');
 
-        if (error) {
-          // If applications table doesn't exist, we'll use empty array
-          if (error.code === '42P01') { // undefined_table
-            console.warn('Applications table not found');
-            apps = [];
-          } else {
-            throw error;
+              if (errorFallback) {
+                // Check if it's a table/column missing error
+                if (errorFallback.code === '42P01' || errorFallback.code === '42703') {
+                  console.warn('Applications table or columns not yet configured properly');
+                  return [];
+                } else {
+                  throw errorFallback;
+                }
+              }
+              console.log(`Fetched ${dataFallback?.length || 0} applications (fallback query)`);
+              return dataFallback;
+            } else if (error) {
+              // Some other error
+              console.error('Error fetching applications:', error);
+              // Check if it's a table/column missing error
+              if (error.code === '42P01' || error.code === '42703') {
+                console.warn('Applications table or columns not yet configured properly');
+                return [];
+              } else {
+                throw error;
+              }
+            }
+            console.log(`Fetched ${data?.length || 0} applications`);
+            return data;
+          } catch (err) {
+            console.warn('Error fetching applications:', err);
+            return [];
           }
-        } else {
-          apps = data;
-        }
-      } catch (err) {
-        console.warn('Error fetching applications:', err);
-        apps = [];
-      }
+        })(),
+        // Get total users count from profiles table (which we know exists)
+        (async () => {
+          try {
+            const { data, error } = await supabase
+              .from('profiles')
+              .select('id', { count: 'exact' });
 
-      // Get total users count from profiles table (which we know exists)
-      let totalUsers = 0;
-      try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('id', { count: 'exact' });
+            if (error) throw error;
+            console.log(`Fetched ${data.length} users`);
+            return data.length;
+          } catch (err) {
+            console.error('Error fetching users count:', err);
+            return 0;
+          }
+        })()
+      ]);
 
-        if (error) throw error;
-        totalUsers = data.length;
-      } catch (err) {
-        console.error('Error fetching users count:', err);
-        totalUsers = 0;
-      }
+      const apps = appsResult;
+      const totalUsers = usersResult;
+
+      console.log(`Processing ${apps.length} applications for stats and recent activity`);
 
       // Calculate stats from applications data
       // pending = submitted + under_review
       const pending = apps.filter((a: any) => a.status === "submitted" || a.status === "under_review").length;
 
-      // approvedToday = approved where date is today
+      // approvedToday = approved where date is today (since created_at doesn't exist, we only check date)
       const today = new Date().toISOString().slice(0, 10);
       const approvedToday = apps.filter((a: any) =>
         a.status === "approved" &&
-        (a.date === today || (a.created_at && a.created_at.slice(0,10) === today))
+        a.date === today
       ).length;
 
       const returned = apps.filter((a: any) => a.status === "returned").length;
 
+      console.log(`Stats: pending=${pending}, approvedToday=${approvedToday}, returned=${returned}, totalUsers=${totalUsers}`);
       setStats({ pending, approvedToday, returned, totalUsers });
 
       // Recent activity: take first 6 latest applications and map
+      // Since we don't have reliable timestamps, we just show the applications in the order we received them
       const recent = apps.slice(0, 6).map((a: any) => ({
         id: a.id_display || a.app_id || a.id,
         applicant: a.fullname,
         action: a.status,
-        created_at: a.created_at || a.date,
+        // Use date field or empty string if neither date nor created_at exists
+        created_at: a.date || '',
       }));
 
+      console.log(`Setting recent activity with ${recent.length} items`);
       setRecentActivity(recent);
     } catch (err) {
       console.error('Error in loadDashboard:', err);
@@ -269,21 +302,27 @@ const StaffDashboard = () => {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {recentActivity.map((activity) => (
-                    <div
-                      key={activity.id}
-                      className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-base"
-                    >
-                      <div>
-                        <p className="font-semibold">{activity.id}</p>
-                        <p className="text-sm text-muted-foreground">{activity.applicant}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-medium"><StatusBadge status={activity.action} /></p>
-                        <p className="text-xs text-muted-foreground">{formatRelative(activity.created_at)}</p>
-                      </div>
-                    </div>
-                  ))}
+                  {recentActivity.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">No recent activity</p>
+                  ) : (
+                    <>
+                      {recentActivity.map((activity) => (
+                        <div
+                          key={activity.id}
+                          className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-base"
+                        >
+                          <div>
+                            <p className="font-semibold">{activity.id}</p>
+                            <p className="text-sm text-muted-foreground">{activity.applicant}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-medium"><StatusBadge status={activity.action} /></p>
+                            <p className="text-xs text-muted-foreground">{formatRelative(activity.created_at)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>
