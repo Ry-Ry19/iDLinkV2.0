@@ -1,15 +1,10 @@
 /**
- * LEARNER'S NOTE:
- * StaffDashboard.tsx is the admin dashboard for ICTC staff managing all applications.
- *
- * KEY CONCEPTS:
- * - Staff-only access: Redirects students/employees away from this page
- * - Stats calculation: Derives pending, approvedToday, returned, totalUsers from API data
- * - Polling for updates: Silent polling every 5 seconds to keep stats current
- * - Relative time formatting: formatRelative() converts timestamps to "X min ago" format
- * - Promise.all: Simultaneous API calls for applications and user count
- * - StaffSidebar component: Navigation menu specific to admin functions
- * - StatusBadge: Shows application status in recent activity list
+ * StaffDashboard.tsx
+ * - Removed broken storageUrl (was referencing undefined 'url' variable)
+ * - Removed the huge 360px profile photo from the heading
+ * - Added clean profile card in the sidebar card (same pattern as student/employee)
+ * - Fixed StatusBadge to use safeBadgeStatus for ready_for_pickup
+ * - Stats: pending, approved total, rejected total, totalUsers
  */
 import Footer from "@/components/Footer";
 import HighlightedName from "@/components/HighlightedName";
@@ -22,200 +17,104 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/lib/supabaseClient";
 
+type BadgeStatus = "submitted" | "under_review" | "approved" | "returned" | "rejected" | "expired";
+
+function safeBadgeStatus(status: string): BadgeStatus {
+  if (status === "ready_for_pickup") return "approved";
+  const valid: BadgeStatus[] = ["submitted", "under_review", "approved", "returned", "rejected", "expired"];
+  return valid.includes(status as BadgeStatus) ? (status as BadgeStatus) : "submitted";
+}
+
+function getInitials(name: string) {
+  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+}
+
 function formatRelative(dateStr?: string) {
   if (!dateStr) return "";
-  // Ensure parsable ISO string
-  const iso = dateStr.replace(" ", "T");
-  const d = new Date(iso);
+  const d = new Date(dateStr.replace(" ", "T"));
   if (isNaN(d.getTime())) return dateStr;
   const diff = Date.now() - d.getTime();
   const sec = Math.floor(diff / 1000);
-  if (sec < 60) return `${sec} sec${sec !== 1 ? "s" : ""} ago`;
+  if (sec < 60) return `${sec}s ago`;
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} min${min !== 1 ? "s" : ""} ago`;
+  if (min < 60) return `${min}m ago`;
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} hour${hr !== 1 ? "s" : ""} ago`;
-  const days = Math.floor(hr / 24);
-  return `${days} day${days !== 1 ? "s" : ""} ago`;
+  if (hr < 24) return `${hr}h ago`;
+  return `${Math.floor(hr / 24)}d ago`;
 }
 
 const StaffDashboard = () => {
   const navigate = useNavigate();
-
   const [userName, setUserName] = useState("");
   const [userRole, setUserRole] = useState<"student" | "employee" | "staff" | null>(null);
-
-  const [stats, setStats] = useState({ pending: 0, approvedToday: 0, returned: 0, totalUsers: 0 });
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [stats, setStats] = useState({ pending: 0, approved: 0, rejected: 0, totalUsers: 0 });
   const [recentActivity, setRecentActivity] = useState<Array<any>>([]);
   const [loading, setLoading] = useState(false);
 
-  // Load user info from Supabase auth and profile
   useEffect(() => {
     const loadUser = async () => {
-      const {
-        data: { user: authUser },
-      } = await supabase.auth.getUser();
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) { navigate("/login"); return; }
 
-      if (!authUser) {
-        navigate("/login");
-        return;
-      }
-
-      // Fetch profile from profiles table
       const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', authUser.id)
+        .from("profiles")
+        .select("*")
+        .eq("id", authUser.id)
         .single();
 
-      if (error) {
-        console.error("Error fetching profile:", error);
-        navigate("/login");
-        return;
-      }
+      if (error || !profile) { navigate("/login"); return; }
 
-      // Set user name and role
       setUserName(profile.fullname);
       setUserRole(profile.role as "student" | "employee" | "staff");
+      setAvatarUrl(profile.avatar_url ?? null);
 
-      // Store in localStorage for consistency with other parts
-      const userData = {
+      localStorage.setItem("user", JSON.stringify({
         fullname: profile.fullname,
         role: profile.role,
         idno: profile.idno,
         email: authUser.email ?? "",
-      };
-      localStorage.setItem("user", JSON.stringify(userData));
+      }));
 
-      // ❗ Prevent students/employees from accessing staff dashboard
-      if (profile.role !== "staff") {
-        navigate("/");
-      }
+      if (profile.role !== "staff") { navigate("/"); }
     };
-
     loadUser();
   }, [navigate]);
 
-  // Fetch dashboard data from Supabase
   const loadDashboard = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      // Fetch applications and users count simultaneously using Promise.all
       const [appsResult, usersResult] = await Promise.all([
-        // Try to fetch applications from Supabase
-        (async () => {
-          try {
-            console.log('Fetching applications from applications table');
-            const { data, error } = await supabase
-              .from('applications')
-              .select('*')
-              .order('id', { ascending: false }); // Try to order by id descending (assuming id exists)
-
-            // If we got a column/table error for id, try without ordering
-            if (error && (error.code === '42P01' || error.code === '42703')) {
-              console.log('Failed to order by id, trying without order by');
-              const { data: dataFallback, error: errorFallback } = await supabase
-                .from('applications')
-                .select('*');
-
-              if (errorFallback) {
-                // Check if it's a table/column missing error
-                if (errorFallback.code === '42P01' || errorFallback.code === '42703') {
-                  console.warn('Applications table or columns not yet configured properly');
-                  return [];
-                } else {
-                  throw errorFallback;
-                }
-              }
-              console.log(`Fetched ${dataFallback?.length || 0} applications (fallback query)`);
-              return dataFallback;
-            } else if (error) {
-              // Some other error
-              console.error('Error fetching applications:', error);
-              // Check if it's a table/column missing error
-              if (error.code === '42P01' || error.code === '42703') {
-                console.warn('Applications table or columns not yet configured properly');
-                return [];
-              } else {
-                throw error;
-              }
-            }
-            console.log(`Fetched ${data?.length || 0} applications`);
-            return data;
-          } catch (err) {
-            console.warn('Error fetching applications:', err);
-            return [];
-          }
-        })(),
-        // Get total users count from profiles table (which we know exists)
-        (async () => {
-          try {
-            const { data, error } = await supabase
-              .from('profiles')
-              .select('id', { count: 'exact' });
-
-            if (error) throw error;
-            console.log(`Fetched ${data.length} users`);
-            return data.length;
-          } catch (err) {
-            console.error('Error fetching users count:', err);
-            return 0;
-          }
-        })()
+        supabase.from("applications").select("*").order("id", { ascending: false }),
+        supabase.from("profiles").select("id", { count: "exact" }),
       ]);
 
-      const apps = appsResult;
-      const totalUsers = usersResult;
+      const apps = appsResult.data ?? [];
+      const totalUsers = usersResult.data?.length ?? 0;
 
-      console.log(`Processing ${apps.length} applications for stats and recent activity`);
-
-      // Calculate stats from applications data
-      // pending = submitted + under_review
       const pending = apps.filter((a: any) => a.status === "submitted" || a.status === "under_review").length;
+      const approved = apps.filter((a: any) => a.status === "approved" || a.status === "ready_for_pickup").length;
+      const rejected = apps.filter((a: any) => a.status === "rejected").length;
 
-      // approvedToday = approved where date is today (since created_at doesn't exist, we only check date)
-      const today = new Date().toISOString().slice(0, 10);
-      const approvedToday = apps.filter((a: any) =>
-        a.status === "approved" &&
-        a.date === today
-      ).length;
+      setStats({ pending, approved, rejected, totalUsers });
 
-      const returned = apps.filter((a: any) => a.status === "returned").length;
-
-      console.log(`Stats: pending=${pending}, approvedToday=${approvedToday}, returned=${returned}, totalUsers=${totalUsers}`);
-      setStats({ pending, approvedToday, returned, totalUsers });
-
-      // Recent activity: take first 6 latest applications and map
-      // Since we don't have reliable timestamps, we just show the applications in the order we received them
       const recent = apps.slice(0, 6).map((a: any) => ({
-        id: a.id_display || a.app_id || a.id,
+        id: a.id_display || String(a.id),
         applicant: a.fullname,
         action: a.status,
-        // Use date field or empty string if neither date nor created_at exists
-        created_at: a.date || '',
+        created_at: a.date || "",
       }));
-
-      console.log(`Setting recent activity with ${recent.length} items`);
       setRecentActivity(recent);
     } catch (err) {
-      console.error('Error in loadDashboard:', err);
-      // Set default stats in case of error
-      setStats({ pending: 0, approvedToday: 0, returned: 0, totalUsers: 0 });
-      setRecentActivity([]);
+      console.error("loadDashboard error:", err);
     } finally {
       if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
-    // initial load
     loadDashboard();
-
-    // Poll dashboard every 5 seconds silently
-    const pollId = setInterval(() => {
-      loadDashboard(true);
-    }, 5000);
-
+    const pollId = setInterval(() => loadDashboard(true), 5000);
     return () => clearInterval(pollId);
   }, []);
 
@@ -228,6 +127,8 @@ const StaffDashboard = () => {
 
         <main className="flex-1 bg-background">
           <div className="container mx-auto px-4 py-8">
+
+            {/* ── Header row ── */}
             <div className="mb-8 grid gap-4 md:grid-cols-3 items-start">
               <div className="md:col-span-2">
                 <h1 className="text-3xl font-bold mb-2 flex items-baseline gap-3">
@@ -239,24 +140,43 @@ const StaffDashboard = () => {
                 <p className="text-muted-foreground">Monitor and manage ID applications system-wide.</p>
               </div>
 
+              {/* ── Profile card (same pattern as student/employee) ── */}
               <div className="md:col-span-1">
                 <div className="bg-card p-4 rounded-lg shadow-card border border-border">
-                  <p className="text-xs text-muted-foreground">Signed in as</p>
-                  <p className="font-semibold mt-1">{userName}</p>
-                  <p className="text-sm text-muted-foreground mt-1">Administrator</p>
-                  <div className="mt-3 flex gap-2">
-                    <button onClick={() => loadDashboard(true)} className="px-3 py-1 rounded-md bg-primary text-white text-sm">Refresh</button>
-                    <button onClick={() => navigate('/staff/users')} className="px-3 py-1 rounded-md border border-border text-sm">Users</button>
+                  <div className="flex items-center gap-3 mb-3">
+                    {avatarUrl ? (
+                      <img
+                        src={avatarUrl}
+                        alt="Avatar"
+                        className="h-10 w-10 rounded-full object-cover border border-border flex-shrink-0"
+                      />
+                    ) : (
+                      <div className="h-10 w-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                        <span className="text-primary font-semibold text-sm">
+                          {userName ? getInitials(userName) : "ST"}
+                        </span>
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Signed in as</p>
+                      <p className="font-semibold truncate">{userName}</p>
+                      <p className="text-sm text-muted-foreground">Administrator</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => loadDashboard(true)} className="flex-1 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-sm text-center">Refresh</button>
+                    <button onClick={() => navigate("/staff/users")} className="flex-1 px-3 py-1.5 rounded-md border border-border text-sm text-center">Users</button>
+                    <button onClick={() => navigate("/profile")} className="flex-1 px-3 py-1.5 rounded-md border border-border text-sm text-center">Profile</button>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Statistics */}
+            {/* ── Stats ── */}
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4 mb-8">
               <Card className="shadow-card">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Pending Applications</CardTitle>
+                  <CardTitle className="text-sm font-medium">Pending</CardTitle>
                   <Clock className="h-5 w-5 text-warning" />
                 </CardHeader>
                 <CardContent>
@@ -266,21 +186,21 @@ const StaffDashboard = () => {
 
               <Card className="shadow-card">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Approved Today</CardTitle>
+                  <CardTitle className="text-sm font-medium">Approved</CardTitle>
                   <CheckCircle className="h-5 w-5 text-success" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{loading ? "—" : stats.approvedToday}</div>
+                  <div className="text-3xl font-bold">{loading ? "—" : stats.approved}</div>
                 </CardContent>
               </Card>
 
               <Card className="shadow-card">
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Returned Applications</CardTitle>
+                  <CardTitle className="text-sm font-medium">Rejected</CardTitle>
                   <XCircle className="h-5 w-5 text-destructive" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-3xl font-bold">{loading ? "—" : stats.returned}</div>
+                  <div className="text-3xl font-bold">{loading ? "—" : stats.rejected}</div>
                 </CardContent>
               </Card>
 
@@ -295,7 +215,7 @@ const StaffDashboard = () => {
               </Card>
             </div>
 
-            {/* Recent Activity */}
+            {/* ── Recent Activity ── */}
             <Card className="shadow-card">
               <CardHeader>
                 <CardTitle>Recent Activity</CardTitle>
@@ -305,23 +225,24 @@ const StaffDashboard = () => {
                   {recentActivity.length === 0 ? (
                     <p className="text-center text-muted-foreground py-8">No recent activity</p>
                   ) : (
-                    <>
-                      {recentActivity.map((activity) => (
-                        <div
-                          key={activity.id}
-                          className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-base"
-                        >
-                          <div>
-                            <p className="font-semibold">{activity.id}</p>
-                            <p className="text-sm text-muted-foreground">{activity.applicant}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="font-medium"><StatusBadge status={activity.action} /></p>
-                            <p className="text-xs text-muted-foreground">{formatRelative(activity.created_at)}</p>
-                          </div>
+                    recentActivity.map((activity, idx) => (
+                      <div
+                        key={`${activity.id}-${idx}`}
+                        className="flex items-center justify-between p-4 border border-border rounded-lg hover:bg-muted/50 transition-colors"
+                      >
+                        <div>
+                          <p className="font-semibold">{activity.id}</p>
+                          <p className="text-sm text-muted-foreground">{activity.applicant}</p>
                         </div>
-                      ))}
-                    </>
+                        <div className="text-right">
+                          <StatusBadge status={safeBadgeStatus(activity.action)} />
+                          {activity.action === "ready_for_pickup" && (
+                            <span className="block text-xs text-green-600 font-medium mt-0.5">Ready for Pickup</span>
+                          )}
+                          <p className="text-xs text-muted-foreground mt-1">{formatRelative(activity.created_at)}</p>
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
               </CardContent>

@@ -19,16 +19,16 @@ import { Calendar, AlertCircle, CheckCircle } from "lucide-react";
 
 const ContractExpiration = () => {
   const contractInfo = {
-    contractNumber: "EMP-2023-001",
-    startDate: "2023-01-15",
-    endDate: "2024-03-15",
-    daysRemaining: 45,
+    contractNumber: "ID-1782112583594",
+    startDate: "2026-06-22",
+    endDate: "2026-08-15",
+    daysRemaining: 22,
     status: "expiring_soon",
   };
 
   return (
     <div className="min-h-screen flex flex-col">
-      <Navbar isLoggedIn userRole="employee" userName="Maria Santos" />
+      <Navbar isLoggedIn userRole="employee" userName="YANYAN PEROSO" />
       
       <main className="flex-1 bg-background">
         <div className="container mx-auto px-4 py-8 max-w-3xl">

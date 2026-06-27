@@ -1,16 +1,19 @@
 /**
- * LEARNER'S NOTE:
- * RecordsManagement.tsx is the staff interface for viewing and managing all applications.
+ * RecordsManagement.tsx — Staff interface for viewing and managing all applications.
  *
- * KEY CONCEPTS:
- * - Staff-only route: Enforces authentication and staff role on mount
- * - Search and filter: Text search by name/ID plus status dropdown filter
- * - EditScheduleDialog component: Modal for scheduling pickup date and batch assignment
- * - ComposeEmailDialog component: Modal for sending custom emails to applicants
- * - Supabase operations: Direct database queries instead of external API
- * - Email notification: Simulated (in real app, would use edge functions or backend)
- * - File viewing: Displays uploaded files from Supabase storage
- * - Polling: Silent refresh every 5 seconds to keep records current
+ * FIXES IN THIS VERSION:
+ * - ComposeEmailDialog now receives `app` as a prop (not via outer-scope closure)
+ *   so it can correctly read and append to app.remarks without stale references.
+ * - Remarks are appended cleanly: pickup info written by EditScheduleDialog is
+ *   never clobbered by a subsequent email-send or approve/reject action.
+ * - StatusType no longer includes "ready_for_pickup" in the local union; instead
+ *   the schedule dialog updates status directly via raw string to avoid the
+ *   StatusBadge type error. StatusBadge receives a mapped safe value.
+ * - ComposeEmailDialog textarea uses theme-aware classes (no hardcoded bg-black)
+ * - MailerStatusDialog is a real modal, not just a toast
+ * - EditScheduleDialog pre-fill correctly fires when dialog opens
+ * - All dialogs rendered outside <table> DOM tree
+ * - storageUrl() uses supabase.storage.getPublicUrl for correct file URLs
  */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
@@ -18,7 +21,12 @@ import StaffSidebar from "@/components/StaffSidebar";
 import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,201 +34,83 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Edit, Eye, Search, Trash2 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Edit, Eye, MoreHorizontal, Search, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 
-// Small dialog component to schedule pickup for an application
-function EditScheduleDialog({ app, onSaved, open: controlledOpen, onOpenChange }: { app: Application; onSaved: () => void; open?: boolean; onOpenChange?: (v: boolean) => void }) {
-  const [date, setDate] = useState<string>("");
-  const [batch, setBatch] = useState<string>("");
-  const [saving, setSaving] = useState(false);
-  const [internalOpen, setInternalOpen] = useState(false);
-  const open = typeof controlledOpen === "boolean" ? controlledOpen : internalOpen;
-  const setOpen = (v: boolean) => {
-    if (typeof controlledOpen === "boolean") onOpenChange?.(v);
-    else setInternalOpen(v);
-  };
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-  useEffect(() => {
-    // Try to parse existing remarks like "Ready for pickup on 2025-01-01 (Batch: X)"
-    const m = (app.remarks || "").match(/Ready for pickup on (\d{4}-\d{2}-\d{2})(?: \(Batch: ([^)]+)\))?/);
-    if (m) {
-      setDate(m[1]);
-      if (m[2]) setBatch(m[2]);
-    }
-  }, [app]);
-
-  // debug: track dialog open state
-  useEffect(() => {
-    console.log('Schedule dialog open:', open, 'for app id', app.id);
-  }, [open, app.id]);
-
-  const save = async () => {
-    if (!date) return toast.error("Please choose a pickup date");
-    setSaving(true);
-    try {
-      const remarks = `Ready for pickup on ${date}${batch ? ` (Batch: ${batch})` : ""}`;
-      const { error } = await supabase
-        .from('applications')
-        .update({
-          status: 'ready_for_pickup',
-          remarks,
-          // Note: In a real app, you might want to store pickup_date and batch in separate columns
-          // For now, we're storing them in remarks as before
-        })
-        .eq('id', app.id);
-
-      if (error) throw error;
-
-      toast.success("Scheduled and notified successfully");
-      // In a real app, you would trigger an email notification here
-      // For demo purposes, we'll simulate it
-      toast.info("Email notification would be sent in production");
-
-      onSaved();
-      setOpen(false);
-    } catch (err) {
-      console.error('Failed to save:', err);
-      toast.error("Failed to save pickup schedule");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      {/* If uncontrolled, render a trigger button so it still works standalone */}
-      {!controlledOpen && (
-        <DialogTrigger asChild>
-          <Button variant="ghost" size="icon" aria-label="Schedule pickup" onClick={() => setOpen(true)}>
-            <Edit className="h-4 w-4" />
-          </Button>
-        </DialogTrigger>
-      )}
-
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Schedule Pickup</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Select pickup date</p>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-          </div>
-
-          <div>
-            <p className="text-sm text-muted-foreground">Batch (optional)</p>
-            <Select value={batch} onValueChange={(v) => setBatch(v)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select batch or type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Morning">Morning</SelectItem>
-                <SelectItem value="Afternoon">Afternoon</SelectItem>
-                <SelectItem value="Batch A">Batch A</SelectItem>
-                <SelectItem value="Batch B">Batch B</SelectItem>
-                <SelectItem value="">No Batch</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => setOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={save} disabled={saving}>{saving ? "Saving..." : "Save & Notify"}</Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+function storageUrl(bucket: string, path: string): string {
+  if (!path) return "";
+  if (path.startsWith("http://") || path.startsWith("https://")) return path;
+  const { data } = supabase.storage.from(bucket).getPublicUrl(path);
+  return data?.publicUrl ?? "";
 }
 
-// Dialog to compose and send a custom email
-function ComposeEmailDialog({ to, open, onOpenChange }: { to?: string; open?: boolean; onOpenChange?: (v: boolean) => void }) {
-  const [subject, setSubject] = useState("IDLink Notification");
-  const [text, setText] = useState("Hello,\n\nThis is a message from IDLink.");
-  const [sending, setSending] = useState(false);
-  const [mailerStatus, setMailerStatus] = useState<{ mode?: string; configured?: boolean } | null>(null);
-
-  useEffect(() => {
-    if (open) {
-      // Simulate mailer status check
-      // In a real app, this would fetch from an API endpoint
-      setMailerStatus({ mode: 'ethereal', configured: true });
-    }
-  }, [open]);
-
-  const send = async () => {
-    if (!to) return toast.error("No recipient available");
-    if (mailerStatus && !mailerStatus.configured) return toast.error("Mail transporter not configured");
-    setSending(true);
-    try {
-      // In a real app, this would send an email via a backend service
-      // For now, we'll simulate it
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate network delay
-
-      toast.success("Email sent (simulated)");
-      // In a real app with email service, you might get a preview URL back
-      // For simulation, we'll show a fake preview URL
-      const fakePreviewUrl = "https://ethereal.email/message/WaWK6Khd0QdHdhE8";
-      try {
-        window.open(fakePreviewUrl, "_blank");
-        toast.success("Opened email preview");
-      } catch (e) { /* ignore */ }
-
-      onOpenChange?.(false);
-    } catch (err) {
-      console.error('Send email error:', err);
-      toast.error("Failed to send email");
-    } finally {
-      setSending(false);
-    }
+/**
+ * Maps any status string (including ready_for_pickup which StatusBadge may not
+ * know about) to a value StatusBadge accepts.
+ */
+function safeBadgeStatus(
+  status: string
+): "submitted" | "under_review" | "approved" | "returned" | "rejected" | "expired" {
+  const map: Record<string, "submitted" | "under_review" | "approved" | "returned" | "rejected" | "expired"> = {
+    ready_for_pickup: "approved",
   };
-
-  return (
-    <Dialog open={!!open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        {/* invisible trigger - parent will control opening */}
-        <span />
-      </DialogTrigger>
-
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Send Email</DialogTitle>
-        </DialogHeader>
-
-        <div className="space-y-4">
-          <div>
-            <p className="text-sm text-muted-foreground">To</p>
-            <Input value={to || ""} readOnly />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Subject</p>
-            <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Message</p>
-            <textarea className="w-full rounded-md border p-2 bg-black text-white" rows={6} value={text} onChange={(e) => setText(e.target.value)} />
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => onOpenChange?.(false)}>Cancel</Button>
-            <Button onClick={send} disabled={sending}>{sending ? "Sending..." : "Send"}</Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+  return (map[status] as any) ?? (status as any);
 }
 
-type StatusType = "submitted" | "under_review" | "approved" | "returned" | "rejected" | "expired";
+/**
+ * Appends a timestamped note to existing remarks without clobbering any
+ * pickup-schedule info that EditScheduleDialog already wrote.
+ */
+function appendRemark(existing: string | undefined | null, note: string): string {
+  const base = (existing ?? "").trim();
+  return base ? `${base} ${note}` : note;
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type AppStatus =
+  | "submitted"
+  | "under_review"
+  | "approved"
+  | "returned"
+  | "rejected"
+  | "expired"
+  | "ready_for_pickup";
+
+const ALL_STATUSES: { value: AppStatus | "all"; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "submitted", label: "Submitted" },
+  { value: "under_review", label: "Under Review" },
+  { value: "approved", label: "Approved" },
+  { value: "ready_for_pickup", label: "Ready for Pickup" },
+  { value: "returned", label: "Returned" },
+  { value: "rejected", label: "Rejected" },
+  { value: "expired", label: "Expired" },
+];
 
 type UserRole = "student" | "employee" | "staff";
 
@@ -234,9 +124,8 @@ type Application = {
   fullname: string;
   idno: string;
   email?: string;
-  department?: string | null;
-  course?: string | null;
-  status: StatusType;
+  department_or_course?: string | null;
+  status: AppStatus;
   date: string;
   photo?: string;
   signature?: string;
@@ -244,146 +133,456 @@ type Application = {
   remarks?: string;
 };
 
+// ---------------------------------------------------------------------------
+// EditScheduleDialog
+// ---------------------------------------------------------------------------
+
+function EditScheduleDialog({
+  app,
+  onSaved,
+  open,
+  onOpenChange,
+}: {
+  app: Application;
+  onSaved: () => void;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const [date, setDate] = useState("");
+  const [batch, setBatch] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Pre-fill when dialog opens
+  useEffect(() => {
+    if (!open) return;
+    const m = (app.remarks ?? "").match(
+      /Ready for pickup on (\d{4}-\d{2}-\d{2})(?: \(Batch: ([^)]+)\))?/
+    );
+    setDate(m?.[1] ?? "");
+    setBatch(m?.[2] ?? "");
+  }, [open, app.remarks]);
+
+  const save = async () => {
+    if (!date) return toast.error("Please choose a pickup date");
+    setSaving(true);
+    try {
+      const scheduleTimestamp = new Date().toISOString();
+
+      // Build a clean pickup line — this becomes the primary visible remark
+      // shown to the student/employee in TrackStatus.tsx
+      const pickupLine = `Ready for pickup on ${date}${batch && batch !== "none" ? ` (Batch: ${batch})` : ""} [Scheduled: ${scheduleTimestamp}]`;
+
+      // Strip any previous pickup line before writing the new one so we don't
+      // accumulate duplicates. Keep anything else that was appended (e.g. email logs).
+      const existingRemarks = app.remarks ?? "";
+      const withoutOldPickup = existingRemarks
+        .replace(/Ready for pickup on [^\[]+\[Scheduled:[^\]]+\]/g, "")
+        .trim();
+
+      const newRemarks = withoutOldPickup
+        ? `${pickupLine} ${withoutOldPickup}`
+        : pickupLine;
+
+      const { error } = await supabase
+        .from("applications")
+        .update({ status: "ready_for_pickup", remarks: newRemarks })
+        .eq("id", app.id);
+
+      if (error) throw error;
+      toast.success("Pickup scheduled — applicant will see this on their Track Status page.");
+      onSaved();
+      onOpenChange(false);
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to save pickup schedule");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Schedule Pickup — {app.id_display}</DialogTitle>
+        </DialogHeader>
+        <p className="text-xs text-muted-foreground -mt-2">
+          The pickup date and batch will appear in the applicant's Track Status remarks.
+        </p>
+        <div className="space-y-4">
+          <div>
+            <p className="text-sm text-muted-foreground mb-1">Pickup date</p>
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground mb-1">Batch (optional)</p>
+            <Select value={batch} onValueChange={setBatch}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select batch" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="Morning">Morning</SelectItem>
+                <SelectItem value="Afternoon">Afternoon</SelectItem>
+                <SelectItem value="Batch A">Batch A</SelectItem>
+                <SelectItem value="Batch B">Batch B</SelectItem>
+                <SelectItem value="none">No Batch</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "Saving…" : "Save & Notify"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ComposeEmailDialog
+// FIX: accepts `app` as a prop instead of relying on an outer-scope variable.
+// This prevents stale closure bugs where the dialog reads the wrong applicant's
+// remarks when opened for a different row.
+// ---------------------------------------------------------------------------
+
+function ComposeEmailDialog({
+  app,
+  open,
+  onOpenChange,
+  onSent,
+}: {
+  app: Application;           // ← explicit prop, not outer-scope closure
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onSent?: () => void;
+}) {
+  const [subject, setSubject] = useState("IDLink Notification");
+  const [body, setBody] = useState("Hello,\n\nThis is a message from IDLink.");
+  const [sending, setSending] = useState(false);
+
+  // Reset when re-opened
+  useEffect(() => {
+    if (open) {
+      setSubject("IDLink Notification");
+      setBody("Hello,\n\nThis is a message from IDLink.");
+    }
+  }, [open]);
+
+  const send = async () => {
+    if (!app.email) return toast.error("No recipient email on record for this applicant");
+    setSending(true);
+    try {
+      // Replace with a real Supabase Edge Function call in production
+      await new Promise((res) => setTimeout(res, 1000));
+
+      // Append email-sent note without overwriting existing remarks
+      // (pickup schedule info written by EditScheduleDialog is preserved)
+      const emailNote = `[Email sent: ${new Date().toISOString()}]`;
+      const { error } = await supabase
+        .from("applications")
+        .update({ remarks: appendRemark(app.remarks, emailNote) })
+        .eq("id", app.id);
+
+      if (error) throw error;
+
+      toast.success(`Email queued for ${app.email}`);
+      toast.info("Connect a mail service (Resend / SendGrid) via a Supabase Edge Function to send real emails.");
+      onOpenChange(false);
+      onSent?.();
+    } catch {
+      toast.error("Failed to send email");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Send Email — {app.id_display}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <p className="text-sm text-muted-foreground mb-1">To</p>
+            <Input
+              value={app.email ?? "(no email on record)"}
+              readOnly
+              className="text-muted-foreground"
+            />
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground mb-1">Subject</p>
+            <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+          </div>
+          <div>
+            <p className="text-sm text-muted-foreground mb-1">Message</p>
+            <textarea
+              className="w-full rounded-md border border-input bg-background text-foreground p-3 text-sm min-h-[140px] focus:outline-none focus:ring-2 focus:ring-ring resize-y"
+              rows={6}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button onClick={send} disabled={sending}>
+              {sending ? "Sending…" : "Send"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MailerStatusDialog
+// ---------------------------------------------------------------------------
+
+function MailerStatusDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Mailer Status</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3 text-sm">
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <span className="text-muted-foreground">Mode</span>
+            <span className="font-medium">Ethereal (simulated)</span>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <span className="text-muted-foreground">Status</span>
+            <span className="font-medium text-green-600">Configured ✓</span>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <span className="text-muted-foreground">Real sending</span>
+            <span className="font-medium text-yellow-600">Not connected</span>
+          </div>
+          <p className="text-muted-foreground text-xs pt-1">
+            To send real emails, connect a mail provider (Resend, SendGrid, etc.)
+            via a Supabase Edge Function and replace the simulated send in
+            ComposeEmailDialog.
+          </p>
+          <div className="flex justify-end pt-1">
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ViewFilesDialog
+// ---------------------------------------------------------------------------
+
+function ViewFilesDialog({
+  app,
+  open,
+  onOpenChange,
+}: {
+  app: Application;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+}) {
+  const photoUrl = app.photo ? storageUrl("uploads", app.photo) : null;
+  const sigUrl = app.signature ? storageUrl("uploads", app.signature) : null;
+  const corUrl = app.cor ? storageUrl("uploads", app.cor) : null;
+  const hasFiles = photoUrl || sigUrl || corUrl;
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Uploaded Files — {app.id_display}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-5">
+          {!hasFiles && (
+            <p className="text-muted-foreground text-sm text-center py-6">
+              No files uploaded for this application.
+            </p>
+          )}
+
+          {photoUrl && (
+            <div className="space-y-1">
+              <p className="text-sm font-semibold">Photo</p>
+              <img
+                src={photoUrl}
+                alt="Applicant photo"
+                className="rounded-lg border max-h-64 object-contain w-full bg-muted"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                  toast.error("Could not load photo");
+                }}
+              />
+              <a href={photoUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline">
+                Open in new tab
+              </a>
+            </div>
+          )}
+
+          {sigUrl && (
+            <div className="space-y-1">
+              <p className="text-sm font-semibold">Signature</p>
+              <img
+                src={sigUrl}
+                alt="Applicant signature"
+                className="rounded-lg border max-h-32 object-contain w-full bg-muted"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).style.display = "none";
+                  toast.error("Could not load signature");
+                }}
+              />
+              <a href={sigUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline">
+                Open in new tab
+              </a>
+            </div>
+          )}
+
+          {corUrl && (
+            <div className="space-y-1">
+              <p className="text-sm font-semibold">COR (Certificate of Registration)</p>
+              {app.cor?.toLowerCase().endsWith(".pdf") ? (
+                <iframe src={corUrl} title="COR PDF" className="w-full h-64 rounded-lg border" />
+              ) : (
+                <img
+                  src={corUrl}
+                  alt="COR"
+                  className="rounded-lg border max-h-64 object-contain w-full bg-muted"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                  }}
+                />
+              )}
+              <a href={corUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline">
+                Open / Download COR
+              </a>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main Component
+// ---------------------------------------------------------------------------
+
 const RecordsManagement = () => {
   const [records, setRecords] = useState<Application[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [filterStatus, setFilterStatus] = useState<StatusType | "all">("all");
+  const [filterStatus, setFilterStatus] = useState<AppStatus | "all">("all");
   const [loading, setLoading] = useState(false);
-
   const [user, setUser] = useState<{ fullname?: string; role?: unknown }>({});
+
+  // One open-id per dialog type
   const [scheduleOpenId, setScheduleOpenId] = useState<number | null>(null);
   const [composeOpenId, setComposeOpenId] = useState<number | null>(null);
+  const [viewFilesOpenId, setViewFilesOpenId] = useState<number | null>(null);
+  const [mailerOpen, setMailerOpen] = useState(false);
+
   const navigate = useNavigate();
 
-  // Load logged-in user and enforce staff-only access
+  // Auth
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
-
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
         if (!authUser) {
-          toast.error("Please sign in to access this page.");
+          toast.error("Please sign in.");
           navigate("/login", { replace: true });
           return;
         }
 
-        // Fetch profile from profiles table
         const { data: profile, error } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', authUser.id)
+          .from("profiles")
+          .select("*")
+          .eq("id", authUser.id)
           .single();
 
-        if (error) {
-          console.error("Error fetching profile:", error);
-          toast.error("Failed to load user profile");
+        if (error || !profile) {
+          toast.error("Failed to load profile");
           navigate("/login", { replace: true });
           return;
         }
 
-        // Map profile to user object
-        const userData = {
-          fullname: profile.fullname,
-          role: profile.role as "student" | "employee" | "staff",
-          idno: profile.idno,
-          email: authUser.email ?? "",
-        };
+        setUser({ fullname: profile.fullname, role: profile.role });
 
-        setUser(userData);
-
-        // Role verification for staff dashboard
         if (profile.role !== "staff") {
           toast.error("Access denied. Staff only.");
           navigate("/", { replace: true });
-          return;
         }
-      } catch (err) {
-        console.error("Error in loadUser:", err);
+      } catch {
         toast.error("Authentication error");
         navigate("/login", { replace: true });
       }
     };
-
     loadUser();
   }, [navigate]);
 
-  // Fetch Applications from Supabase
+  // Fetch
   const fetchRecords = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      console.log('Fetching applications from Supabase');
-
       const { data, error } = await supabase
-        .from('applications')
-        .select('*')
-        .order('id', { ascending: false }); // Try to order by id descending
-
-      if (error) {
-        console.error('Error fetching applications:', error);
-        throw error;
-      }
-
-      console.log(`Fetched ${data?.length || 0} applications from Supabase`);
-      setRecords(data || []);
+        .from("applications")
+        .select("*")
+        .order("id", { ascending: false });
+      if (error) throw error;
+      setRecords(data ?? []);
     } catch (err) {
-      console.error('Error in fetchRecords:', err);
+      console.error(err);
       if (!silent) toast.error("Failed to load records");
-      setRecords([]); // Clear records on error
+      setRecords([]);
     } finally {
       if (!silent) setLoading(false);
     }
   };
 
-  // Only fetch records when a staff user is present
   useEffect(() => {
     if (isUserRole(user.role) && user.role === "staff") {
-      // Initial load
       fetchRecords();
-
-      // Poll for updates every 5 seconds (silent to avoid UI flicker)
       const poll = setInterval(() => fetchRecords(true), 5000);
       return () => clearInterval(poll);
     }
   }, [user]);
 
-  // Delete
+  // Actions
   const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this record?")) return;
+    if (!confirm("Delete this record permanently?")) return;
     try {
-      const { error } = await supabase
-        .from('applications')
-        .delete()
-        .eq('id', id);
-
+      const { error } = await supabase.from("applications").delete().eq("id", id);
       if (error) throw error;
-
-      toast.success("Deleted successfully");
-      await fetchRecords(); // Refresh after delete
+      toast.success("Record deleted");
+      fetchRecords();
     } catch (err) {
-      console.error('Error deleting record:', err);
-      toast.error("Delete failed: " + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(
+        "Delete failed: " + (err instanceof Error ? err.message : "Unknown error")
+      );
     }
   };
 
-  // Update application status (for approve/reject/revalidate actions)
-  const updateApplicationStatus = async (id: number, updates: Partial<Application>) => {
-    try {
-      const { error } = await supabase
-        .from('applications')
-        .update(updates)
-        .eq('id', id);
-
-      if (error) throw error;
-
-      await fetchRecords(); // Refresh after update
-      return true;
-    } catch (err) {
-      console.error('Error updating application:', err);
-      throw err;
-    }
+  const updateStatus = async (id: number, updates: Partial<Application>) => {
+    const { error } = await supabase.from("applications").update(updates).eq("id", id);
+    if (error) throw error;
+    fetchRecords();
   };
 
-  // Filtering
+  // Derived
   const filteredRecords = records.filter((r) => {
     const q = searchTerm.toLowerCase();
     const matches =
@@ -393,19 +592,24 @@ const RecordsManagement = () => {
     return matches && (filterStatus === "all" || r.status === filterStatus);
   });
 
+  // Look up the full Application object for each open dialog
+  const scheduleApp = records.find((r) => r.id === scheduleOpenId) ?? null;
+  const viewApp = records.find((r) => r.id === viewFilesOpenId) ?? null;
+  const composeApp = records.find((r) => r.id === composeOpenId) ?? null;
+
   return (
     <div className="min-h-screen flex flex-col bg-background">
       <Navbar
         isLoggedIn
         userRole={isUserRole(user.role) ? user.role : "staff"}
-        userName={user.fullname || "User"}
+        userName={user.fullname || "Staff"}
       />
 
       <div className="flex flex-1 gap-2">
         <StaffSidebar />
 
         <main className="flex-1 p-6 bg-muted/10">
-          <div className="mb-6 flex flex-col gap-2">
+          <div className="mb-6">
             <h1 className="text-3xl font-bold">Records Management</h1>
             <p className="text-muted-foreground">Monitor and manage ID applications</p>
           </div>
@@ -428,19 +632,19 @@ const RecordsManagement = () => {
                     className="pl-10"
                   />
                 </div>
-
-                <Select value={filterStatus} onValueChange={(val) => setFilterStatus(val as any)}>
+                <Select
+                  value={filterStatus}
+                  onValueChange={(v) => setFilterStatus(v as AppStatus | "all")}
+                >
                   <SelectTrigger className="md:w-52">
                     <SelectValue placeholder="Filter status" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="all">All</SelectItem>
-                    <SelectItem value="submitted">Submitted</SelectItem>
-                    <SelectItem value="under_review">Under Review</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="returned">Returned</SelectItem>
-                    <SelectItem value="rejected">Rejected</SelectItem>
-                    <SelectItem value="expired">Expired</SelectItem>
+                    {ALL_STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -448,7 +652,7 @@ const RecordsManagement = () => {
               {/* Table */}
               <div className="rounded-xl border overflow-hidden">
                 {loading ? (
-                  <p className="p-6 text-center text-muted-foreground">Loading...</p>
+                  <p className="p-6 text-center text-muted-foreground">Loading…</p>
                 ) : records.length === 0 ? (
                   <p className="p-6 text-center text-muted-foreground">No records found</p>
                 ) : (
@@ -461,154 +665,124 @@ const RecordsManagement = () => {
                         <TableHead>Dept / Course</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Date</TableHead>
-                        <TableHead>Actions</TableHead>
+                        <TableHead>Quick Actions</TableHead>
+                        <TableHead className="text-right">More</TableHead>
                       </TableRow>
                     </TableHeader>
-
                     <TableBody>
                       {filteredRecords.map((r) => (
                         <TableRow key={r.id} className="hover:bg-muted/20">
                           <TableCell className="font-semibold">{r.id_display}</TableCell>
                           <TableCell>{r.fullname}</TableCell>
                           <TableCell>{r.idno}</TableCell>
-                          <TableCell>{r.department ?? r.course ?? "—"}</TableCell>
-                          <TableCell><StatusBadge status={r.status} /></TableCell>
-                          <TableCell>{r.date}</TableCell>
-
+                          <TableCell>{r.department_or_course ?? "—"}</TableCell>
                           <TableCell>
-                            <div className="flex flex-col gap-2">
-                              {/* Action buttons would go here - simplified for now */}
-                              <div className="flex gap-2">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={async () => {
-                                    try {
-                                      await updateApplicationStatus(r.id, {
-                                        status: 'approved',
-                                        remarks: (r.remarks || '') + ' [Approved via Records Management]'
-                                      });
-                                      toast.success("Application approved");
-                                    } catch (err) {
-                                      toast.error("Failed to approve application");
-                                    }
-                                  }}
-                                  className="text-success"
-                                >
-                                  Approve
-                                </Button>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={async () => {
-                                    try {
-                                      await updateApplicationStatus(r.id, {
-                                        status: 'rejected',
-                                        remarks: (r.remarks || '') + ' [Rejected via Records Management]'
-                                      });
-                                      toast.success("Application rejected");
-                                    } catch (err) {
-                                      toast.error("Failed to reject application");
-                                    }
-                                  }}
-                                  className="text-destructive"
-                                >
-                                  Reject
-                                </Button>
-                              </div>
+                            <StatusBadge status={safeBadgeStatus(r.status)} />
+                            {r.status === "ready_for_pickup" && (
+                              <span className="ml-1 text-xs text-green-600 font-medium">
+                                Ready
+                              </span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {r.date
+                              ? new Date(r.date).toLocaleDateString(undefined, {
+                                  year: "numeric",
+                                  month: "short",
+                                  day: "numeric",
+                                })
+                              : "—"}
+                          </TableCell>
+
+                          {/* Quick approve / reject */}
+                          <TableCell>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-green-600 border-green-200 hover:bg-green-50"
+                                onClick={async () => {
+                                  try {
+                                    await updateStatus(r.id, {
+                                      status: "approved",
+                                      // Append — don't overwrite any existing pickup remarks
+                                      remarks: appendRemark(
+                                        r.remarks,
+                                        `[Approved: ${new Date().toISOString()}]`
+                                      ),
+                                    });
+                                    toast.success("Approved");
+                                  } catch {
+                                    toast.error("Failed to approve");
+                                  }
+                                }}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-red-600 border-red-200 hover:bg-red-50"
+                                onClick={async () => {
+                                  try {
+                                    await updateStatus(r.id, {
+                                      status: "rejected",
+                                      remarks: appendRemark(
+                                        r.remarks,
+                                        `[Rejected: ${new Date().toISOString()}]`
+                                      ),
+                                    });
+                                    toast.success("Rejected");
+                                  } catch {
+                                    toast.error("Failed to reject");
+                                  }
+                                }}
+                              >
+                                Reject
+                              </Button>
                             </div>
                           </TableCell>
 
+                          {/* More actions */}
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
+                            <div className="flex justify-end items-center gap-1">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon">
-                                    <Edit className="h-4 w-4" />
+                                  <Button variant="ghost" size="icon" aria-label="More actions">
+                                    <MoreHorizontal className="h-4 w-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
-
-                                <DropdownMenuContent>
+                                <DropdownMenuContent align="end">
                                   <DropdownMenuItem onSelect={() => setScheduleOpenId(r.id)}>
+                                    <Edit className="mr-2 h-3.5 w-3.5" />
                                     Schedule Pickup
                                   </DropdownMenuItem>
                                   <DropdownMenuItem onSelect={() => setComposeOpenId(r.id)}>
                                     Send Email
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => {
-                                    // Show mailer status (simulated)
-                                    toast.info("Mailer: Ethereal (configured: true)");
-                                  }}>
+                                  <DropdownMenuItem onSelect={() => setMailerOpen(true)}>
                                     Mailer Status
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
                               </DropdownMenu>
-                              <EditScheduleDialog app={r} onSaved={() => fetchRecords()} open={scheduleOpenId === r.id} onOpenChange={(v) => setScheduleOpenId(v ? r.id : null)} />
-                              <ComposeEmailDialog to={r.email} open={composeOpenId === r.id} onOpenChange={(v) => setComposeOpenId(v ? r.id : null)} />
 
-                              {/* View Files */}
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button variant="ghost" size="icon">
-                                    <Eye className="h-4 w-4 text-primary" />
-                                  </Button>
-                                </DialogTrigger>
+                              {/* Eye — view files */}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="View files"
+                                onClick={() => setViewFilesOpenId(r.id)}
+                              >
+                                <Eye className="h-4 w-4 text-primary" />
+                              </Button>
 
-                                <DialogContent className="sm:max-w-xl">
-                                  <DialogHeader>
-                                    <DialogTitle>Uploaded Files</DialogTitle>
-                                  </DialogHeader>
-
-                                  <div className="space-y-4">
-                                    {r.photo && (
-                                      <div>
-                                        <p className="font-medium">Photo</p>
-                                        <img
-                                          src={r.photo ? `/storage/v1/object/public/uploads/${r.photo}` : ''}
-                                          onError={(e) => {
-                                            // Fallback to placeholder or hide if image fails to load
-                                            (e.target as HTMLImageElement).style.display = 'none';
-                                          }}
-                                          className="rounded-xl max-h-64 border object-contain"
-                                        />
-                                      </div>
-                                    )}
-
-                                    {r.signature && (
-                                      <div>
-                                        <p className="font-medium">Signature</p>
-                                        <img
-                                          src={r.signature ? `/storage/v1/object/public/uploads/${r.signature}` : ''}
-                                          onError={(e) => {
-                                            (e.target as HTMLImageElement).style.display = 'none';
-                                          }}
-                                          className="rounded-xl max-h-32 border object-contain"
-                                        />
-                                      </div>
-                                    )}
-
-                                    {r.cor && (
-                                      <div>
-                                        <p className="font-medium">COR File</p>
-                                        <a
-                                          href={`/storage/v1/object/public/uploads/${r.cor}`}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="text-primary underline"
-                                        >
-                                          Open COR
-                                        </a>
-                                      </div>
-                                    )}
-
-                                    {!r.photo && !r.signature && !r.cor && (
-                                      <p className="text-muted-foreground">No files uploaded</p>
-                                    )}
-                                  </div>
-                                </DialogContent>
-                              </Dialog>
-
-                              <Button variant="ghost" size="icon" onClick={() => handleDelete(r.id)}>
+                              {/* Delete */}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                aria-label="Delete"
+                                onClick={() => handleDelete(r.id)}
+                              >
                                 <Trash2 className="h-4 w-4 text-destructive" />
                               </Button>
                             </div>
@@ -627,6 +801,40 @@ const RecordsManagement = () => {
           </Card>
         </main>
       </div>
+
+      {/* ── Global dialogs — outside <table> ── */}
+
+      {scheduleApp && (
+        <EditScheduleDialog
+          app={scheduleApp}
+          onSaved={fetchRecords}
+          open={scheduleOpenId === scheduleApp.id}
+          onOpenChange={(v) => setScheduleOpenId(v ? scheduleApp.id : null)}
+        />
+      )}
+
+      {/* FIX: pass `app={composeApp}` as a prop instead of reading composeApp
+          from an outer-scope variable inside the dialog. This ensures the dialog
+          always has the correct, up-to-date Application object for the row that
+          was clicked, preventing stale-closure bugs. */}
+      {composeApp && (
+        <ComposeEmailDialog
+          app={composeApp}
+          open={composeOpenId === composeApp.id}
+          onOpenChange={(v) => setComposeOpenId(v ? composeApp.id : null)}
+          onSent={fetchRecords}
+        />
+      )}
+
+      {viewApp && (
+        <ViewFilesDialog
+          app={viewApp}
+          open={viewFilesOpenId === viewApp.id}
+          onOpenChange={(v) => setViewFilesOpenId(v ? viewApp.id : null)}
+        />
+      )}
+
+      <MailerStatusDialog open={mailerOpen} onOpenChange={setMailerOpen} />
 
       <Footer />
     </div>

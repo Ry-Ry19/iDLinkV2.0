@@ -30,7 +30,7 @@ const teamMembers: TeamMember[] = [
     image: teamMember1,
   },
   {
-    name: "Earl Navrro",
+    name: "Earl Navarro",
     role: "Project Manager",
     description: "The one who plan the project",
     image: teamMember2,

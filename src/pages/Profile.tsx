@@ -1,229 +1,187 @@
 /**
- * LEARNER'S NOTE:
- * Profile.tsx allows users to view and edit their profile information.
+ * Profile.tsx
+ * - Avatar upload to Supabase Storage bucket "avatars"
+ * - Reads/writes avatar_url column in profiles table
+ * - Shows all profile fields: fullname, idno, role, email, course, year
+ * - Email is read-only (from auth.users)
+ * - Saves to profiles table via upsert
  *
- * KEY CONCEPTS:
- * - Authentication check: Validates user from localStorage, redirects to /login if not found
- * - Supabase integration: Uses supabase.auth.getUser() to get current user
- * - Form state management: Uses useState for fullname, idno, and role fields
- * - Profile loading: Fetches user profile data from the profiles table
- * - Form submission: Updates profile data in the profiles table using Supabase
- * - Loading states: Shows loading indicators during data fetch and submission
- * - Success/error handling: Uses toast notifications for user feedback
+ * IMPORTANT — run this SQL first in Supabase if avatar_url column doesn't exist:
+ *   ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS avatar_url text;
+ * And create storage bucket "avatars" with public access in Storage settings.
  */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
-import {
-  CheckCircle,
-  ChevronDown,
-  Square,
-  UserPen
-} from "lucide-react";
-import { useEffect, useState } from "react";
+import { Camera, Loader2, UserPen } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
 
-// Helper function to validate role from Supabase data
-const validateRole = (role: string | null | undefined): "student" | "employee" | "staff" => {
-  const validRoles = ["student", "employee", "staff"] as const;
-  if (role && validRoles.includes(role as typeof validRoles[number])) {
-    return role as typeof validRoles[number];
-  }
-  return "student"; // default fallback
+const validateRole = (role: unknown): "student" | "employee" | "staff" => {
+  if (role === "student" || role === "employee" || role === "staff") return role;
+  return "student";
 };
 
-interface UserProfile {
+function getInitials(name: string) {
+  return name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+}
+
+interface ProfileData {
   id: string;
   fullname: string;
   idno: string;
   role: "student" | "employee" | "staff";
-  // Additional fields that might be in the profiles table
+  email: string;
   course?: string | null;
   year?: string | null;
+  avatar_url?: string | null;
   created_at?: string;
-  updated_at?: string;
 }
 
 const Profile = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [saving, setSaving] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Form state
-  const [fullname, setFullname] = useState<string>("");
-  const [idno, setIdno] = useState<string>("");
+  const [authUser, setAuthUser] = useState<any>(null);
+  const [profile, setProfile] = useState<ProfileData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+
+  // Form fields
+  const [fullname, setFullname] = useState("");
+  const [idno, setIdno] = useState("");
   const [role, setRole] = useState<"student" | "employee" | "staff">("student");
-  const [course, setCourse] = useState<string | null>(null);
-  const [year, setYear] = useState<string | null>(null);
+  const [course, setCourse] = useState("");
+  const [year, setYear] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
-  // Load user and profile data
   useEffect(() => {
-    const loadUserAndProfile = async () => {
-      try {
-        setLoading(true);
+    const load = async () => {
+      setLoading(true);
+      const { data: { user: au } } = await supabase.auth.getUser();
+      if (!au) { navigate("/login"); return; }
+      setAuthUser(au);
 
-        // Get current user from Supabase auth
-        const { data: { user: currentUser }, error: userError } = await supabase.auth.getUser();
+      const { data: p, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", au.id)
+        .single();
 
-        if (userError) {
-          throw userError;
-        }
-
-        if (!currentUser) {
-          navigate("/login");
-          return;
-        }
-
-        setUser(currentUser);
-
-        // Fetch profile data from profiles table
-        const { data: profileData, error: profileError } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', currentUser.id)
-          .single();
-
-        if (profileError && profileError.code !== 'PGRST116') { // PGRST116 means no rows returned
-          throw profileError;
-        }
-
-        if (profileData) {
-          setProfile(profileData);
-          // Set form state from profile data
-          setFullname(profileData.fullname);
-          setIdno(profileData.idno);
-          setRole(validateRole(profileData.role));
-          setCourse(profileData.course ?? null);
-          setYear(profileData.year ?? null);
-        } else {
-          // If no profile exists yet, use data from user_metadata
-          const metadata = currentUser.user_metadata || {};
-          setProfile({
-            id: currentUser.id,
-            fullname: metadata.fullname || "",
-            idno: metadata.idno || "",
-            role: validateRole(metadata.role),
-            course: metadata.course ?? null,
-            year: metadata.year ?? null
-          });
-
-          // Set form state from user_metadata
-          setFullname(metadata.fullname || "");
-          setIdno(metadata.idno || "");
-          setRole(validateRole(metadata.role));
-          setCourse(metadata.course ?? null);
-          setYear(metadata.year ?? null);
-        }
-      } catch (err: any) {
-        console.error("Error loading profile:", err);
-        toast.error("Failed to load profile data");
-      } finally {
+      if (error && error.code !== "PGRST116") {
+        toast.error("Failed to load profile");
         setLoading(false);
+        return;
       }
-    };
 
-    loadUserAndProfile();
+      if (p) {
+        setProfile(p);
+        setFullname(p.fullname ?? "");
+        setIdno(p.idno ?? "");
+        setRole(validateRole(p.role));
+        setCourse(p.course ?? "");
+        setYear(p.year ?? "");
+        setAvatarUrl(p.avatar_url ?? null);
+      } else {
+        const m = au.user_metadata ?? {};
+        setFullname(m.fullname ?? "");
+        setIdno(m.idno ?? "");
+        setRole(validateRole(m.role));
+      }
+      setLoading(false);
+    };
+    load();
   }, [navigate]);
 
-  // Handle form submission
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAvatarClick = () => fileInputRef.current?.click();
 
-    if (!user) {
-      toast.error("User not found");
-      return;
-    }
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !authUser) return;
 
-    setSaving(true);
+    // Validate: max 2 MB, image only
+    if (file.size > 2 * 1024 * 1024) { toast.error("Image must be under 2 MB"); return; }
+    if (!file.type.startsWith("image/")) { toast.error("Please upload an image file"); return; }
+
+    setUploadingAvatar(true);
     try {
-      // Update profile in the profiles table
-      const { error } = await supabase
-        .from('profiles')
-        .upsert({
-          id: user.id,
-          fullname: fullname,
-          idno: idno,
-          role: role,
-          course: course,
-          year: year,
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'id'
-        });
+      const ext = file.name.split(".").pop();
+      const path = `${authUser.id}/avatar.${ext}`;
 
-      if (error) {
-        throw error;
-      }
+      // Upload to "avatars" bucket (create it as public in Supabase Storage)
+      const { error: upErr } = await supabase.storage
+        .from("avatars")
+        .upload(path, file, { upsert: true, contentType: file.type });
 
-      // Also update user_metadata in auth.users for consistency
-      const { error: metaError } = await supabase.auth.updateUser({
-        data: {
-          fullname,
-          idno,
-          role,
-          course,
-          year
-        }
-      });
+      if (upErr) throw upErr;
 
-      if (metaError) {
-        console.warn("Failed to update user metadata:", metaError);
-        // Don't throw error here as the main profile update succeeded
-      }
+      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+      const newUrl = data.publicUrl + `?t=${Date.now()}`; // cache-bust
 
-      // Refresh current user so Navbar updates immediately
-      const { data: refreshedUser } = await supabase.auth.getUser();
+      // Save to profile
+      const { error: dbErr } = await supabase
+        .from("profiles")
+        .update({ avatar_url: data.publicUrl })
+        .eq("id", authUser.id);
 
-      if (refreshedUser.user) {
-        setUser(refreshedUser.user);
-      }
+      if (dbErr) throw dbErr;
 
-      toast.success("Profile updated successfully");
-
-      // Update local state
-      setProfile({
-        id: user.id,
-        fullname,
-        idno,
-        role,
-        course,
-        year,
-        updated_at: new Date().toISOString()
-      });
+      setAvatarUrl(newUrl);
+      toast.success("Profile photo updated");
     } catch (err: any) {
-      console.error("Error updating profile:", err);
-      toast.error(err.message || "Failed to update profile");
+      console.error(err);
+      toast.error(err.message || "Failed to upload photo");
     } finally {
-      setSaving(false);
+      setUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
+ const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  if (!authUser) return;
+  setSaving(true);
+  try {
+    const { error } = await supabase
+      .from("profiles")
+      .upsert({
+        id: authUser.id,
+        fullname: fullname.trim(),
+        idno: idno.trim(),
+        role,
+        course: course.trim() || null,
+        year: year.trim() || null,
+        email: authUser.email, // 👈 This line ensures the email field is sent during creation
+      }, { onConflict: "id" });
+
+    if (error) throw error;
+
+    // Keep auth metadata in sync
+    await supabase.auth.updateUser({ data: { fullname: fullname.trim(), idno: idno.trim(), role } });
+
+    toast.success("Profile updated successfully");
+
+    // Refresh profile state
+    const { data: fresh } = await supabase.from("profiles").select("*").eq("id", authUser.id).single();
+    if (fresh) setProfile(fresh);
+  } catch (err: any) {
+    console.error(err);
+    toast.error(err.message || "Failed to update profile");
+  } finally {
+    setSaving(false);
+  }
+};
+
 
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-background">
-        <Navbar isLoggedIn userRole="student" userName="Loading..." />
+        <Navbar isLoggedIn userRole="student" userName="Loading…" />
         <main className="flex-1 flex items-center justify-center">
-          <div className="text-center">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-            <p className="mt-4 text-muted-foreground">Loading profile...</p>
-          </div>
-        </main>
-        <Footer />
-      </div>
-    );
-  }
-
-  if (!user) {
-    // This should be caught by the useEffect redirect, but just in case
-    return (
-      <div className="min-h-screen flex flex-col bg-background">
-        <Navbar isLoggedIn userRole="student" userName="Redirecting..." />
-        <main className="flex-1 flex items-center justify-center">
-          <p className="text-muted-foreground">Redirecting to login...</p>
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </main>
         <Footer />
       </div>
@@ -234,178 +192,156 @@ const Profile = () => {
     <div className="min-h-screen flex flex-col bg-background">
       <Navbar
         isLoggedIn
-        userRole={validateRole(user.user_metadata?.role)}
-        userName={(user.user_metadata?.fullname || "User")}
+        userRole={validateRole(authUser?.user_metadata?.role)}
+        userName={fullname || "User"}
       />
 
       <main className="flex-1 p-6">
-        <div className="container mx-auto">
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold mb-2">
-              User Profile
-              <UserPen className="h-5 w-5 ml-2 text-primary" />
-            </h1>
-            <p className="text-muted-foreground">
-              View and update your profile information
-            </p>
+        <div className="container mx-auto max-w-2xl">
+          <div className="mb-6 flex items-center gap-2">
+            <h1 className="text-3xl font-bold">Profile</h1>
+            <UserPen className="h-6 w-6 text-primary" />
           </div>
 
-          {/* Profile Form */}
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Full Name Field */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-muted-foreground">
-                Full Name
-              </label>
+          {/* ── Avatar section ── */}
+          <div className="flex flex-col items-center mb-8">
+            <div className="relative group cursor-pointer" onClick={handleAvatarClick}>
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt="Profile"
+                  className="h-28 w-28 rounded-full object-cover border-2 border-border shadow-md"
+                />
+              ) : (
+                <div className="h-28 w-28 rounded-full bg-primary/20 flex items-center justify-center border-2 border-border shadow-md">
+                  <span className="text-primary font-bold text-2xl">
+                    {fullname ? getInitials(fullname) : "?"}
+                  </span>
+                </div>
+              )}
+              <div className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                {uploadingAvatar
+                  ? <Loader2 className="h-6 w-6 text-white animate-spin" />
+                  : <Camera className="h-6 w-6 text-white" />
+                }
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">Click to change photo (max 2 MB)</p>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
+          </div>
+
+          {/* ── Form ── */}
+          <form onSubmit={handleSubmit} className="space-y-5">
+            {/* Full name */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-muted-foreground">Full Name</label>
               <input
                 type="text"
                 value={fullname}
                 onChange={(e) => setFullname(e.target.value)}
-                className="block w-full rounded-md border border-border p-3 bg-background/50 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-0 disabled:opacity-50"
+                className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 placeholder="Enter your full name"
                 required
                 disabled={saving}
               />
             </div>
 
-            {/* ID Number Field */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-muted-foreground">
-                ID Number
-              </label>
+            {/* ID Number */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-muted-foreground">ID Number</label>
               <input
                 type="text"
                 value={idno}
                 onChange={(e) => setIdno(e.target.value)}
-                className="block w-full rounded-md border border-border p-3 bg-background/50 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-0 disabled:opacity-50"
+                className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 placeholder="Enter your ID number"
                 required
                 disabled={saving}
               />
             </div>
 
-            {/* Role Selection */}
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-muted-foreground">
-                Role
-              </label>
-              <div className="relative">
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as "student" | "employee" | "staff")}
-                  className="block w-full rounded-md border border-border p-3 pl-10 pr-3 bg-background/50 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-0 disabled:opacity-50"
-                  disabled={saving}
-                >
-                  <option value="student">Student</option>
-                  <option value="employee">Employee</option>
-                  <option value="staff">Staff (ICTC)</option>
-                </select>
-                <svg
-                  className="absolute inset-y-0 right-3 flex items-center pointer-events-none h-4 w-4 text-muted-foreground"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <ChevronDown />
-                </svg>
-              </div>
+            {/* Email — read only from auth */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-muted-foreground">Email</label>
+              <input
+                type="email"
+                value={authUser?.email ?? ""}
+                readOnly
+                className="w-full rounded-md border border-input bg-muted px-3 py-2.5 text-sm text-muted-foreground cursor-not-allowed"
+              />
+              <p className="text-xs text-muted-foreground">Email is managed byuser account and cannot be changed here.</p>
             </div>
 
-            {/* Course Field (conditional for students) */}
+            {/* Role */}
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium text-muted-foreground">Role</label>
+              <select
+                value={role}
+                onChange={(e) => setRole(e.target.value as "student" | "employee" | "staff")}
+                className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                disabled={saving}
+              >
+                <option value="student">Student</option>
+                <option value="employee">Employee</option>
+                <option value="staff">Staff (ICTC)</option>
+              </select>
+            </div>
+
+            {/* Course + Year — students only */}
             {role === "student" && (
               <>
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-muted-foreground">
-                    Course
-                  </label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-muted-foreground">Course</label>
                   <input
                     type="text"
-                    value={course || ""}
-                    onChange={(e) => setCourse(e.target.value || null)}
-                    className="block w-full rounded-md border border-border p-3 bg-background/50 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-0 disabled:opacity-50"
-                    placeholder="Enter your course"
+                    value={course}
+                    onChange={(e) => setCourse(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                    placeholder="e.g. BS Computer Science"
                     disabled={saving}
                   />
                 </div>
-
-                <div className="space-y-2">
-                  <label className="block text-sm font-medium text-muted-foreground">
-                    Year Level
-                  </label>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-muted-foreground">Year Level</label>
                   <input
                     type="text"
-                    value={year || ""}
-                    onChange={(e) => setYear(e.target.value || null)}
-                    className="block w-full rounded-md border border-border p-3 bg-background/50 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-0 disabled:opacity-50"
-                    placeholder="Enter your year level"
+                    value={year}
+                    onChange={(e) => setYear(e.target.value)}
+                    className="w-full rounded-md border border-input bg-background px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                    placeholder="e.g. 3rd Year"
                     disabled={saving}
                   />
                 </div>
               </>
             )}
 
-            {/* Submit Button */}
-            <div className="flex justify-end">
-              <Button
-                type="submit"
-                className="gradient-primary text-primary-foreground w-48"
-                disabled={saving}
-              >
-                {saving ? "Saving..." : "Update Profile"}
+            <div className="flex justify-end pt-2">
+              <Button type="submit" disabled={saving} className="w-40">
+                {saving ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving…</> : "Update Profile"}
               </Button>
             </div>
           </form>
 
-          {/* Profile Info Display */}
-          {!saving && profile && (
-            <div className="mt-8 pt-6 border-t border-border">
-              <h2 className="text-2xl font-bold mb-4">
-                Current Profile Information
-              </h2>
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Full Name</p>
-                  <p className="text-lg font-semibold">{profile.fullname}</p>
-                </div>
-
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">ID Number</p>
-                  <p className="text-lg font-mono">{profile.idno}</p>
-                </div>
-
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Role</p>
-                  <p className="text-lg font-semibold capitalize">
-                    {profile.role}
+          {/* ── Info display ── */}
+          {profile && (
+            <div className="mt-10 pt-6 border-t border-border space-y-4">
+              <h2 className="text-lg font-semibold">Account Info</h2>
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p className="text-muted-foreground">Member since</p>
+                  <p className="font-medium">
+                    {profile.created_at ? new Date(profile.created_at).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }) : "—"}
                   </p>
                 </div>
-
-                {profile.role === "student" && (
-                  <>
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-muted-foreground">Course</p>
-                      <p className="text-lg font-semibold">{profile.course || "Not specified"}</p>
-                    </div>
-
-                    <div className="space-y-1">
-                      <p className="text-sm font-medium text-muted-foreground">Year Level</p>
-                      <p className="text-lg font-semibold">{profile.year || "Not specified"}</p>
-                    </div>
-                  </>
-                )}
-
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Member Since</p>
-                  <p className="text-lg font-mono text-muted-foreground">
-                    {profile.created_at ? new Date(profile.created_at).toLocaleDateString() : "Unknown"}
-                  </p>
-                </div>
-
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground">Last Updated</p>
-                  <p className="text-lg font-mono text-muted-foreground">
-                    {profile.updated_at ? new Date(profile.updated_at).toLocaleDateString() : "Unknown"}
-                  </p>
+                <div>
+                  <p className="text-muted-foreground">User ID</p>
+                  <p className="font-mono text-xs break-all">{profile.id}</p>
                 </div>
               </div>
             </div>

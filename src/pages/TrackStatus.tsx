@@ -1,156 +1,180 @@
 /**
- * LEARNER'S NOTE:
- * TrackStatus.tsx displays application status with timeline visualization.
- *
- * KEY CONCEPTS:
- * - Authentication check: Validates user from localStorage, redirects to /login if not found
- * - Role-based access: Staff cannot access this page (redirected to staff dashboard)
- * - API polling: setInterval fetches updates every 5 seconds for real-time status
- * - Timeline generation: Maps application status to visual step progress (Submitted → Under Review → Approved → Ready for Pickup)
- * - Status types: submitted, under_review, approved, returned, rejected, expired
- * - Dynamic application type detection: Checks remarks to determine "ID Revalidation" vs "New ID Application"
- * - useEffect cleanup: Returns cleanup function to clear polling interval on unmount
+ * TrackStatus.tsx
+ * - Replaced localhost:5000 API with Supabase query (user_id based)
+ * - Added ready_for_pickup to status type and timeline
+ * - Polls every 10s so staff changes appear automatically
+ * - Shows pickup date/batch from remarks when ready_for_pickup
  */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import StatusBadge from "@/components/StatusBadge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { CheckCircle, Circle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { CheckCircle, Circle, PackageCheck } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { supabase } from "@/lib/supabaseClient";
+
+type AppStatus =
+  | "submitted"
+  | "under_review"
+  | "approved"
+  | "returned"
+  | "rejected"
+  | "expired"
+  | "ready_for_pickup";
+
+type BadgeStatus = "submitted" | "under_review" | "approved" | "returned" | "rejected" | "expired";
+
+function safeBadgeStatus(status: AppStatus): BadgeStatus {
+  if (status === "ready_for_pickup") return "approved";
+  return status as BadgeStatus;
+}
 
 interface TimelineStep {
   label: string;
   date: string | null;
   completed: boolean;
+  isCurrent: boolean;
 }
 
 interface Application {
   id: number;
   id_display: string;
-  status: "submitted" | "under_review" | "approved" | "returned" | "rejected" | "expired";
+  status: AppStatus;
   date: string;
   remarks?: string;
-  created_at?: string;
 }
 
-interface User {
+interface UserState {
+  id: string;
   fullname: string;
   role: string;
   idno: string;
 }
 
+const STATUS_FLOW: AppStatus[] = ["submitted", "under_review", "approved", "ready_for_pickup"];
+
+function getTimeline(app: Application): TimelineStep[] {
+  // For terminal states (rejected/returned/expired), collapse to 2 steps
+  if (app.status === "rejected" || app.status === "returned" || app.status === "expired") {
+    return [
+      { label: "Submitted", date: app.date, completed: true, isCurrent: false },
+      { label: app.status.charAt(0).toUpperCase() + app.status.slice(1), date: app.date, completed: true, isCurrent: true },
+    ];
+  }
+
+  const currentIndex = STATUS_FLOW.indexOf(app.status);
+  const labels = ["Submitted", "Under Review", "Approved", "Ready for Pickup"];
+
+  return STATUS_FLOW.map((s, i) => ({
+    label: labels[i],
+    date: i <= currentIndex ? app.date : null,
+    completed: i <= currentIndex,
+    isCurrent: i === currentIndex,
+  }));
+}
+
+function getApplicationType(app: Application): string {
+  const r = app.remarks ?? "";
+  if (r.toLowerCase().includes("revalidat")) return "ID Revalidation";
+  return "New ID Application";
+}
+
 const TrackStatus = () => {
   const navigate = useNavigate();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<UserState | null>(null);
   const [applications, setApplications] = useState<Application[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load user and fetch applications
-  useEffect(() => {
-    const storedUser = localStorage.getItem("user");
-    if (storedUser) {
-      const parsed = JSON.parse(storedUser);
-      
-      // Prevent staff from accessing this page
-      if (parsed.role === "staff") {
-        toast.error("Staff cannot access this page");
-        navigate("/staff/dashboard", { replace: true });
-        return;
-      }
-
-      setUser(parsed);
-      fetchUserApplications(parsed.idno);
-
-      // Set up auto-refresh: poll for updates every 5 seconds (silent mode)
-      const pollInterval = setInterval(() => {
-        fetchUserApplications(parsed.idno, true);
-      }, 5000);
-
-      // Cleanup interval on unmount
-      return () => clearInterval(pollInterval);
-    } else {
-      navigate("/login");
-    }
-  }, [navigate]);
-
-  // Fetch user's applications from backend (silent refresh for polling)
-  const fetchUserApplications = async (idno: string, silent = false) => {
-    if (!silent) setLoading(true);
+  const fetchApplications = async (userId: string, silent = false) => {
     try {
-      const res = await fetch(`http://localhost:5000/api/applications?user=${idno}`);
-      if (!res.ok) throw new Error("Failed to fetch applications");
-      const data: Application[] = await res.json();
-      setApplications(data);
+      const { data, error } = await supabase
+        .from("applications")
+        .select("id, id_display, status, date, remarks")
+        .eq("user_id", userId)
+        .order("id", { ascending: false });
+
+      if (error) throw error;
+
+      const mapped: Application[] = (data ?? []).map((app) => ({
+        id: Number(app.id),
+        id_display: String(app.id_display ?? app.id),
+        status: (app.status as AppStatus) ?? "submitted",
+        date: app.date
+          ? new Date(app.date).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" })
+          : "",
+        remarks: app.remarks ?? "",
+      }));
+
+      setApplications(mapped);
     } catch (err) {
-      console.error(err);
+      console.error("fetchApplications error:", err);
       if (!silent) toast.error("Failed to load applications");
     } finally {
       if (!silent) setLoading(false);
     }
   };
 
-  // Generate timeline based on status
-  const getTimeline = (app: Application): TimelineStep[] => {
-    const statusFlow = ["submitted", "under_review", "approved", "ready_for_pickup"];
-    const currentIndex = statusFlow.indexOf(app.status);
+  useEffect(() => {
+    const loadUser = async () => {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) { navigate("/login"); return; }
 
-    return [
-      {
-        label: "Submitted",
-        date: app.date || null,
-        completed: currentIndex >= 0,
-      },
-      {
-        label: "Under Review",
-        date: currentIndex >= 1 ? app.created_at?.split(" ")[0] || app.date : null,
-        completed: currentIndex >= 1,
-      },
-      {
-        label: "Approved",
-        date: currentIndex >= 2 ? app.date : null,
-        completed: currentIndex >= 2,
-      },
-      {
-        label: "Ready for Pickup",
-        date: currentIndex >= 3 ? app.date : null,
-        completed: currentIndex >= 3,
-      },
-    ];
-  };
+      const { data: profile, error } = await supabase
+        .from("profiles")
+        .select("id, fullname, role, idno")
+        .eq("id", authUser.id)
+        .single();
 
-  // Get application type
-  const getApplicationType = (app: Application): string => {
-    const remarks = app.remarks || "";
-    if (remarks.includes("Revalidation") || remarks.includes("revalidate")) {
-      return "ID Revalidation";
-    }
-    return "New ID Application";
-  };
+      if (error || !profile) { navigate("/login"); return; }
 
+      if (profile.role === "staff") {
+        toast.error("Staff cannot access this page");
+        navigate("/staff/dashboard", { replace: true });
+        return;
+      }
+
+      setUser({ id: profile.id, fullname: profile.fullname, role: profile.role, idno: profile.idno });
+
+      await fetchApplications(profile.id);
+      pollRef.current = setInterval(() => fetchApplications(profile.id, true), 10000);
+    };
+
+    loadUser();
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [navigate]);
 
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar
         isLoggedIn={!!user}
-        userRole={(user?.role as "student" | "employee" | "staff") || "student"}
-        userName={user?.fullname || ""}
+        userRole={(user?.role as "student" | "employee" | "staff") ?? "student"}
+        userName={user?.fullname ?? ""}
       />
-      
+
       <main className="flex-1 bg-background">
         <div className="container mx-auto px-4 py-8 max-w-4xl">
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-2">Track Application Status</h1>
-            <p className="text-muted-foreground">Monitor the progress of your ID applications and revalidations.</p>
+            <p className="text-muted-foreground">
+              Monitor the progress of your ID applications in real time.
+            </p>
           </div>
 
           {loading ? (
-            <p className="text-center text-muted-foreground">Loading your applications...</p>
+            <p className="text-center text-muted-foreground py-12">Loading your applications…</p>
           ) : applications.length === 0 ? (
             <Card className="shadow-card">
-              <CardContent className="pt-6">
-                <p className="text-center text-muted-foreground">You have no applications yet.</p>
+              <CardContent className="pt-8 pb-8 text-center">
+                <p className="text-muted-foreground">You have no applications yet.</p>
+                <button
+                  onClick={() => navigate("/apply")}
+                  className="mt-4 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm"
+                >
+                  Apply for an ID
+                </button>
               </CardContent>
             </Card>
           ) : (
@@ -158,18 +182,33 @@ const TrackStatus = () => {
               {applications.map((app) => {
                 const timeline = getTimeline(app);
                 const appType = getApplicationType(app);
+                const isReady = app.status === "ready_for_pickup";
 
                 return (
-                  <Card key={app.id} className="shadow-card">
+                  <Card
+                    key={app.id}
+                    className={`shadow-card ${isReady ? "border-green-300" : ""}`}
+                  >
                     <CardHeader>
-                      <div className="flex items-start justify-between">
+                      <div className="flex items-start justify-between gap-2">
                         <div>
-                          <CardTitle>{appType}</CardTitle>
+                          <CardTitle className="flex items-center gap-2">
+                            {appType}
+                            {isReady && (
+                              <PackageCheck className="h-5 w-5 text-green-600" />
+                            )}
+                          </CardTitle>
                           <CardDescription>Application ID: {app.id_display}</CardDescription>
                         </div>
-                        <StatusBadge status={app.status} />
+                        <div className="text-right flex-shrink-0">
+                          <StatusBadge status={safeBadgeStatus(app.status)} />
+                          {isReady && (
+                            <p className="text-xs text-green-600 font-medium mt-1">Ready for Pickup</p>
+                          )}
+                        </div>
                       </div>
                     </CardHeader>
+
                     <CardContent className="space-y-6">
                       <div className="grid gap-4 md:grid-cols-2">
                         <div>
@@ -178,39 +217,49 @@ const TrackStatus = () => {
                         </div>
                         <div>
                           <p className="text-sm text-muted-foreground">Current Status</p>
-                          <p className="font-semdibold capitalize">{app.status.replace("_", " ")}</p>
+                          <p className="font-semibold capitalize">
+                            {app.status === "ready_for_pickup" ? "Ready for Pickup" : app.status.replace(/_/g, " ")}
+                          </p>
                         </div>
                       </div>
 
+                      {/* Remarks — especially important for pickup schedule */}
                       {app.remarks && (
-                        <div>
-                          <p className="text-sm text-muted-foreground mb-2">Remarks</p>
-                          <p className="text-sm">{app.remarks}</p>
+                        <div className={`rounded-lg p-3 ${isReady ? "bg-green-50 border border-green-200" : "bg-muted/40"}`}>
+                          <p className="text-sm font-medium mb-1">
+                            {isReady ? "📅 Pickup Information" : "Remarks"}
+                          </p>
+                          <p className={`text-sm ${isReady ? "text-green-800" : "text-muted-foreground"}`}>
+                            {app.remarks}
+                          </p>
                         </div>
                       )}
 
                       {/* Timeline */}
                       <div>
                         <p className="text-sm font-semibold mb-4">Application Timeline</p>
-                        <div className="space-y-4">
+                        <div className="space-y-0">
                           {timeline.map((step, index) => (
                             <div key={index} className="flex gap-4">
                               <div className="flex flex-col items-center">
                                 {step.completed ? (
-                                  <CheckCircle className="h-6 w-6 text-success" />
+                                  <CheckCircle className={`h-6 w-6 ${step.isCurrent && isReady ? "text-green-500" : "text-success"}`} />
                                 ) : (
                                   <Circle className="h-6 w-6 text-muted-foreground" />
                                 )}
                                 {index < timeline.length - 1 && (
-                                  <div className={`w-0.5 h-12 ${step.completed ? "bg-success" : "bg-border"}`} />
+                                  <div className={`w-0.5 h-10 mt-1 ${step.completed ? "bg-success" : "bg-border"}`} />
                                 )}
                               </div>
-                              <div className="flex-1 pb-4">
-                                <p className={`font-medium ${step.completed ? "text-foreground" : "text-muted-foreground"}`}>
+                              <div className="flex-1 pb-4 pt-0.5">
+                                <p className={`font-medium text-sm ${step.completed ? "text-foreground" : "text-muted-foreground"}`}>
                                   {step.label}
+                                  {step.isCurrent && (
+                                    <span className="ml-2 text-xs rounded-full bg-primary/10 text-primary px-2 py-0.5">Current</span>
+                                  )}
                                 </p>
                                 {step.date && (
-                                  <p className="text-sm text-muted-foreground">{step.date}</p>
+                                  <p className="text-xs text-muted-foreground mt-0.5">{step.date}</p>
                                 )}
                               </div>
                             </div>
