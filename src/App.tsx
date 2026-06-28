@@ -29,7 +29,7 @@ import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import RecordsManagement from "./pages/RecordsManagement";
-import Register from "./pages/Register";
+import Register from "./pages/register";
 import RevalidateID from "./pages/RevalidateID";
 import ReviewApplication from "./pages/ReviewApplication";
 import StaffDashboard from "./pages/StaffDashboard";

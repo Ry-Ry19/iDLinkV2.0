@@ -27,7 +27,7 @@
  * - Added a small dynamic copyright caption under the card (year computed at render time, not
  *   hardcoded), mirroring the reference's footer line without inventing a fixed date.
  */
-import Footer from "@/components/Footer";
+
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -137,14 +137,14 @@ const Login = () => {
       <main className="flex-1 flex flex-col items-center justify-center bg-muted px-4 py-12">
 
         {/* ONE unified container: form + video as equal-height halves */}
-        <div className="relative mx-auto grid w-full max-w-5xl overflow-hidden rounded-2xl bg-card shadow-2xl md:grid-cols-[2fr_3fr]">
+        <div className="relative mx-auto grid w-full max-w-7xl overflow-hidden rounded-2xl bg-card shadow-2xl md:grid-cols-[2fr_3fr]">
 
           {/* LEFT: LOGIN FORM */}
-          <div className="flex flex-col p-8 md:p-10">
+          <div className="flex flex-col p-8 md:p-8">
             <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
 
               {/* Logo lockup + plain heading, no separate subtitle line */}
-              <div className="mb-8 flex flex-col items-center gap-3 text-center">
+              <div className="mb-8 flex flex-col items-center gap-5 text-center">
                 <div className="flex items-center gap-2">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
                     <GraduationCap className="h-5 w-5 text-primary" />
@@ -276,23 +276,17 @@ const Login = () => {
             <span className="pointer-events-none absolute left-4 top-4 inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
               Campus tour
             </span>
-            <div className="pointer-events-none absolute inset-x-0 bottom-4 px-4 text-center text-white">
-              <div className="text-sm font-medium">Promotional Video clone by iDLink System</div>
-              <div className="text-xs text-white/70">
-                Credits to MSU-IIT 
-              </div>
-            </div>
           </div>
 
         </div>
 
         {/* Small footer caption under the card, year computed at render time */}
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          © {new Date().getFullYear()} IDLink — MSU-Iligan Institute of Technology
+        <p className="mt-6 text-center text-30 text-muted-bold">
+          Copyright © {new Date().getFullYear()} IDLink — MSU-Iligan Institute of Technology. 9200 Iligan City, Philippines.
         </p>
       </main>
 
-      <Footer />
+   
     </div>
   );
 };

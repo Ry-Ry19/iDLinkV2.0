@@ -18,7 +18,6 @@
  * - The video panel is the same clip, poster, and caption treatment used on the login page,
  *   so the two auth screens feel like one consistent flow.
  */
-import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -388,7 +387,6 @@ const Register = () => {
         </div>
       </main>
 
-      <Footer />
     </div>
   );
 };
