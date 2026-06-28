@@ -4,25 +4,52 @@
  *
  * KEY CONCEPTS:
  * - Form fields: idno, fullname, email, password, and conditional fields (course/year for students)
- * - Role selection: RadioGroup allows choosing between student, employee, or staff
+ * - Role selection: card-style picker lets the user choose student, employee, or staff
  * - Conditional rendering: Course and year fields only show when role is "student"
  * - API integration: Supabase signUp with email/password and profile data in user_metadata
  * - Navigation: Redirects to /login page after successful registration
- * - Loading state: Shows "Registering..." text while request is in progress
+ * - Loading state: Spinner + "Registering..." while the request is in progress
  * - Input validation: Checks all required fields before submission
+ *
+ * DESIGN NOTES (this pass):
+ * - Rebuilt to match Login.tsx: one unified card split into equal-height halves (form left,
+ *   video right), icon-prefixed inputs, and a card-style role picker instead of radio dots.
+ * - Added a show/hide toggle on the password field, same pattern as Login.
+ * - The video panel is the same clip, poster, and caption treatment used on the login page,
+ *   so the two auth screens feel like one consistent flow.
  */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { GraduationCap } from "lucide-react";
+import {
+  BookOpen,
+  Briefcase,
+  CalendarDays,
+  Eye,
+  EyeOff,
+  GraduationCap,
+  Hash,
+  Loader2,
+  Lock,
+  Mail,
+  ShieldCheck,
+  User,
+} from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabaseClient";
+
+type Role = "student" | "employee" | "staff";
+
+const ROLE_OPTIONS: { value: Role; label: string; icon: typeof GraduationCap }[] = [
+  { value: "student", label: "Student", icon: GraduationCap },
+  { value: "employee", label: "Employee", icon: Briefcase },
+  { value: "staff", label: "ICTC Staff", icon: ShieldCheck },
+];
 
 const Register = () => {
   const navigate = useNavigate();
@@ -30,9 +57,10 @@ const Register = () => {
   const [fullname, setFullname] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [course, setCourse] = useState("");
   const [year, setYear] = useState("");
-  const [role, setRole] = useState<"student" | "employee" | "staff">("student");
+  const [role, setRole] = useState<Role>("student");
   const [loading, setLoading] = useState(false);
 
   const handleRegister = async (e: React.FormEvent) => {
@@ -139,129 +167,226 @@ const Register = () => {
     <div className="min-h-screen flex flex-col">
       <Navbar />
 
-      <div className="flex-1 flex items-center justify-center py-12 px-4 bg-muted">
-        <Card className="w-full max-w-md shadow-lg">
-          <CardHeader className="space-y-1 text-center">
-            <div className="flex justify-center mb-4">
-              <GraduationCap className="h-12 w-12 text-primary" />
+      <main className="relative flex-1 overflow-hidden bg-muted px-4 py-12">
+        {/* ambient backdrop accents — quiet, not load-bearing */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full bg-primary/10 blur-3xl"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-accent/10 blur-3xl"
+        />
+
+        {/* ONE unified container: form + video as equal-height halves, same pattern as Login */}
+        <div className="relative mx-auto grid w-full max-w-5xl overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xl md:grid-cols-2">
+
+          {/* LEFT: REGISTER FORM */}
+          <div className="flex flex-col p-8 md:p-10">
+            <div className="mx-auto w-full max-w-md">
+              <div className="mb-6 space-y-1 text-center">
+                <div className="mb-2 flex justify-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
+                    <GraduationCap className="h-7 w-7 text-primary" />
+                  </div>
+                </div>
+                <h1 className="text-2xl font-bold tracking-tight">Register to IDLink</h1>
+                <p className="text-sm text-muted-foreground">
+                  Fill in your details to create an account
+                </p>
+              </div>
+
+              <form onSubmit={handleRegister} className="space-y-5">
+
+                <div className="space-y-2">
+                  <Label htmlFor="idno">ID Number</Label>
+                  <div className="relative">
+                    <Hash className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="idno"
+                      type="text"
+                      placeholder="Enter your ID Number"
+                      value={idno}
+                      onChange={(e) => setIdno(e.target.value)}
+                      className="pl-9"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="fullname">Full Name</Label>
+                  <div className="relative">
+                    <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="fullname"
+                      type="text"
+                      placeholder="Your full name"
+                      value={fullname}
+                      onChange={(e) => setFullname(e.target.value)}
+                      className="pl-9"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <div className="relative">
+                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="your.email@msuiit.edu.ph"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="pl-9"
+                      autoComplete="email"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      id="password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="pl-9 pr-9"
+                      autoComplete="new-password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {role === "student" && (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="course">Course</Label>
+                      <div className="relative">
+                        <BookOpen className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id="course"
+                          type="text"
+                          placeholder="Enter your course"
+                          value={course}
+                          onChange={(e) => setCourse(e.target.value)}
+                          className="pl-9"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="year">Year</Label>
+                      <div className="relative">
+                        <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
+                          id="year"
+                          type="text"
+                          placeholder="Enter your year level"
+                          value={year}
+                          onChange={(e) => setYear(e.target.value)}
+                          className="pl-9"
+                          required
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <div className="space-y-2">
+                  <Label>I am a:</Label>
+                  <RadioGroup
+                    value={role}
+                    onValueChange={(value) => setRole(value as Role)}
+                    className="grid grid-cols-3 gap-2"
+                  >
+                    {ROLE_OPTIONS.map(({ value, label, icon: Icon }) => {
+                      const active = role === value;
+                      return (
+                        <label
+                          key={value}
+                          htmlFor={value}
+                          className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition-all ${
+                            active
+                              ? "border-primary bg-primary/5 shadow-sm"
+                              : "border-border hover:border-primary/40 hover:bg-background"
+                          }`}
+                        >
+                          <RadioGroupItem value={value} id={value} className="sr-only" />
+                          <Icon className={`h-5 w-5 ${active ? "text-primary" : "text-muted-foreground"}`} />
+                          <span className={`text-xs font-medium leading-tight ${active ? "text-primary" : "text-foreground"}`}>
+                            {label}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </RadioGroup>
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full gradient-primary text-primary-foreground"
+                  disabled={loading}
+                >
+                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {loading ? "Registering..." : "Register"}
+                </Button>
+
+                <div className="text-center text-sm">
+                  <span className="text-muted-foreground">Already have an account? </span>
+                  <a href="/login" className="font-medium text-primary hover:underline">
+                    Login here
+                  </a>
+                </div>
+              </form>
             </div>
-            <CardTitle className="text-2xl font-bold">Register to IDLink</CardTitle>
-            <CardDescription>Fill in your details to create an account</CardDescription>
-          </CardHeader>
+          </div>
 
-          <CardContent>
-            <form onSubmit={handleRegister} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="idno">ID Number</Label>
-                <Input
-                  id="idno"
-                  type="text"
-                  placeholder="Enter your ID Number"
-                  value={idno}
-                  onChange={(e) => setIdno(e.target.value)}
-                  required
-                />
+          {/* RIGHT: VIDEO — same treatment as Login.tsx, fills the full height of its grid cell */}
+          <div className="relative hidden md:block">
+            <video
+              autoPlay
+              muted
+              loop
+              playsInline
+              controls
+              poster="/video-poster.svg"
+              className="absolute inset-0 h-full w-full object-cover"
+            >
+              <source src="/assets/iit.mp4" type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
+
+            {/* legibility gradient + caption — pointer-events-none so video controls stay clickable */}
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-black/0 to-black/10" />
+            <span className="pointer-events-none absolute left-4 top-4 inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
+              Campus tour
+            </span>
+            <div className="pointer-events-none absolute inset-x-0 bottom-12 px-4 text-center text-white">
+              <div className="text-sm font-medium">Promotional Video clone by iDLink System</div>
+              <div className="text-xs text-white/70">
+                Credits to MSU-IIT <code>public/</code>
               </div>
+            </div>
+          </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="fullname">Full Name</Label>
-                <Input
-                  id="fullname"
-                  type="text"
-                  placeholder="Your full name"
-                  value={fullname}
-                  onChange={(e) => setFullname(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="your.email@msuiit.edu.ph"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="password">Password</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-
-              {role === "student" && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="course">Course</Label>
-                    <Input
-                      id="course"
-                      type="text"
-                      placeholder="Enter your course"
-                      value={course}
-                      onChange={(e) => setCourse(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="year">Year</Label>
-                    <Input
-                      id="year"
-                      type="text"
-                      placeholder="Enter your year level"
-                      value={year}
-                      onChange={(e) => setYear(e.target.value)}
-                      required
-                    />
-                  </div>
-                </>
-              )}
-
-              <div className="space-y-2">
-                <Label>I am a:</Label>
-                <RadioGroup value={role} onValueChange={(value) => setRole(value as any)}>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="student" id="student" />
-                    <Label htmlFor="student" className="font-normal cursor-pointer">Student</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="employee" id="employee" />
-                    <Label htmlFor="employee" className="font-normal cursor-pointer">Employee</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="staff" id="staff" />
-                    <Label htmlFor="staff" className="font-normal cursor-pointer">ICTC Staff</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-
-              <Button
-                type="submit"
-                className="w-full gradient-primary text-primary-foreground"
-                disabled={loading}
-              >
-                {loading ? "Registering..." : "Register"}
-              </Button>
-
-              <div className="text-center text-sm mt-2">
-                <span>Already have an account? </span>
-                <a href="/login" className="text-primary hover:underline">
-                  Login here
-                </a>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
+        </div>
+      </main>
 
       <Footer />
     </div>

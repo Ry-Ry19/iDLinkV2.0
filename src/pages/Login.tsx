@@ -10,25 +10,26 @@
  * - Role-based navigation: Redirects to different dashboards based on user role
  *   (student → /student/dashboard, employee → /employee/dashboard, staff → /staff/dashboard)
  * - Toast notifications: Uses sonner for success/error feedback
- * - UI layout: Two-column design - Login form on left, video/promo on right (hidden on mobile)
+ * - UI layout: One unified card split into two equal-height halves — form on the left,
+ *   video on the right (video hidden on mobile)
  *
- * DESIGN NOTES (this pass):
- * - Role picker is now three tappable cards instead of plain radio dots — faster to scan,
- *   easier to hit on mobile, and the active state is obvious at a glance.
- * - Email/password fields get leading icons and a show/hide toggle on password.
- * - Submit button shows a spinning icon while loading instead of only swapping text.
- * - Right-hand panel gets a small "campus tour" eyebrow and a calmer frame around the video.
+ * DESIGN NOTES (this pass — matched to a reference institutional portal screenshot):
+ * - Card is now borderless (just a shadow), white panel + full-bleed photo, instead of a
+ *   bordered card — closer to a real campus portal than a "marketing" card.
+ * - Inputs lost their visible <Label> text (labels are now sr-only, so screen readers still
+ *   get them) in favor of placeholder-only fields, matching the reference's plain look.
+ * - "Forgot password?" now sits in the same row as the submit button instead of stacked
+ *   below it, and the button itself is no longer full-width.
+ * - Dropped the second descriptive subtitle line under the heading — one plain line plus the
+ *   logo lockup reads cleaner, same as the reference.
+ * - Removed the colored ambient blur shapes behind the card; the reference sits on a flat,
+ *   neutral background, so the card needs to do all the work via shadow alone.
+ * - Added a small dynamic copyright caption under the card (year computed at render time, not
+ *   hardcoded), mirroring the reference's footer line without inventing a fixed date.
  */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -133,46 +134,38 @@ const Login = () => {
     <div className="min-h-screen flex flex-col">
       <Navbar />
 
-      <main className="relative flex-1 overflow-hidden bg-muted px-4 py-12">
-        {/* ambient backdrop accents — quiet, not load-bearing */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-24 -left-24 h-72 w-72 rounded-full bg-primary/10 blur-3xl"
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -bottom-24 -right-24 h-72 w-72 rounded-full bg-accent/10 blur-3xl"
-        />
+      <main className="flex-1 flex flex-col items-center justify-center bg-muted px-4 py-12">
 
-        <div className="relative mx-auto grid w-full max-w-5xl items-center gap-10 md:grid-cols-2">
+        {/* ONE unified container: form + video as equal-height halves */}
+        <div className="relative mx-auto grid w-full max-w-5xl overflow-hidden rounded-2xl bg-card shadow-2xl md:grid-cols-[2fr_3fr]">
 
-          {/* LEFT: LOGIN CARD */}
-          <Card className="mx-auto w-full max-w-md border-border/60 shadow-lg">
-            <CardHeader className="space-y-1 text-center">
-              <div className="mb-2 flex justify-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10">
-                  <GraduationCap className="h-7 w-7 text-primary" />
+          {/* LEFT: LOGIN FORM */}
+          <div className="flex flex-col p-8 md:p-10">
+            <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
+
+              {/* Logo lockup + plain heading, no separate subtitle line */}
+              <div className="mb-8 flex flex-col items-center gap-3 text-center">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                    <GraduationCap className="h-5 w-5 text-primary" />
+                  </div>
+                  <span className="text-lg font-bold tracking-tight">IDLink</span>
                 </div>
+                <h1 className="text-base font-medium text-muted-foreground">
+                  Login to continue
+                </h1>
               </div>
-              <CardTitle className="text-2xl font-bold tracking-tight">
-                Login to IDLink
-              </CardTitle>
-              <CardDescription>
-                Enter your credentials to access your account
-              </CardDescription>
-            </CardHeader>
 
-            <CardContent>
-              <form onSubmit={handleLogin} className="space-y-5">
+              <form onSubmit={handleLogin} className="space-y-4">
 
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="email" className="sr-only">Email</Label>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="email"
                       type="email"
-                      placeholder="your.email@msuiit.edu.ph"
+                      placeholder="Enter your email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="pl-9"
@@ -182,14 +175,14 @@ const Login = () => {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
+                <div className="space-y-1.5">
+                  <Label htmlFor="password" className="sr-only">Password</Label>
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       id="password"
                       type={showPassword ? "text" : "password"}
-                      placeholder="••••••••"
+                      placeholder="Enter your password"
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       className="pl-9 pr-9"
@@ -208,8 +201,8 @@ const Login = () => {
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label>I am a:</Label>
+                <div className="space-y-1.5">
+                  <Label className="text-sm">I am a:</Label>
                   <RadioGroup
                     value={role}
                     onValueChange={(value) => setRole(value as Role)}
@@ -221,7 +214,7 @@ const Login = () => {
                         <label
                           key={value}
                           htmlFor={value}
-                          className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border p-3 text-center transition-all ${
+                          className={`flex cursor-pointer flex-col items-center gap-1.5 rounded-xl border p-2.5 text-center transition-all ${
                             active
                               ? "border-primary bg-primary/5 shadow-sm"
                               : "border-border hover:border-primary/40 hover:bg-background"
@@ -238,60 +231,65 @@ const Login = () => {
                   </RadioGroup>
                 </div>
 
-                <Button
-                  type="submit"
-                  className="w-full gradient-primary text-primary-foreground"
-                  disabled={loading}
-                >
-                  {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  {loading ? "Logging in..." : "Login"}
-                </Button>
-
-                <div className="text-center text-sm">
-                  <a href="#" className="text-primary hover:underline">
+                {/* Forgot password + Login button share one row, like the reference */}
+                <div className="flex items-center justify-between gap-4 pt-1">
+                  <a href="#" className="text-sm font-medium text-primary hover:underline">
                     Forgot password?
                   </a>
+                  <Button
+                    type="submit"
+                    disabled={loading}
+                    className="gradient-primary px-8 text-primary-foreground"
+                  >
+                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {loading ? "Logging in..." : "Login"}
+                  </Button>
                 </div>
               </form>
 
-              <div className="mt-4 border-t border-border pt-4 text-center text-sm">
-                <span className="text-muted-foreground">Don't have an account? </span>
+              <p className="mt-6 text-center text-sm text-muted-foreground">
+                Don't have an account?{" "}
                 <a href="/register" className="font-medium text-primary hover:underline">
                   Register here
                 </a>
-              </div>
-            </CardContent>
-          </Card>
+              </p>
+            </div>
+          </div>
 
-          {/* RIGHT: VIDEO SECTION */}
-          <div className="hidden items-center justify-center md:flex">
-            <div className="w-full rounded-2xl border border-border bg-card p-4 shadow-lg">
-              <span className="mb-3 inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-                Campus tour
-              </span>
-              <div className="overflow-hidden rounded-xl bg-black ring-1 ring-border">
-                <video
-                  controls
-                  poster="/video-poster.svg"
-                  className="aspect-video w-full object-cover"
-                >
-                  <source src="/assets/iit.mp4" type="video/mp4" />
-                  Your browser does not support the video tag.
-                </video>
-              </div>
+          {/* RIGHT: VIDEO — fills the full height of its grid cell, edge to edge */}
+          <div className="relative hidden md:block">
+            <video
+              autoPlay
+              muted
+              loop
+              playsInline
+              controls
+              poster="/video-poster.svg"
+              className="absolute inset-0 h-full w-full object-cover"
+            >
+              <source src="/assets/iit.mp4" type="video/mp4" />
+              Your browser does not support the video tag.
+            </video>
 
-              <div className="mt-4 text-center text-sm text-muted-foreground">
-                <div className="font-medium text-foreground">
-                  Promotional Video clone by iDLink System
-                </div>
-                <div>
-                  Credits to MSU-IIT <code>public/</code>
-                </div>
+            {/* legibility gradient + caption — pointer-events-none so video controls stay clickable */}
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/60 via-black/0 to-black/0" />
+            <span className="pointer-events-none absolute left-4 top-4 inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-medium text-white backdrop-blur-sm">
+              Campus tour
+            </span>
+            <div className="pointer-events-none absolute inset-x-0 bottom-4 px-4 text-center text-white">
+              <div className="text-sm font-medium">Promotional Video clone by iDLink System</div>
+              <div className="text-xs text-white/70">
+                Credits to MSU-IIT 
               </div>
             </div>
           </div>
 
         </div>
+
+        {/* Small footer caption under the card, year computed at render time */}
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          © {new Date().getFullYear()} IDLink — MSU-Iligan Institute of Technology
+        </p>
       </main>
 
       <Footer />
