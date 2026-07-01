@@ -1,19 +1,17 @@
 /**
- * RecordsManagement.tsx — Staff interface for viewing and managing all applications.
+ * RecordsManagement.tsx
  *
- * FIXES IN THIS VERSION:
- * - ComposeEmailDialog now receives `app` as a prop (not via outer-scope closure)
- *   so it can correctly read and append to app.remarks without stale references.
- * - Remarks are appended cleanly: pickup info written by EditScheduleDialog is
- *   never clobbered by a subsequent email-send or approve/reject action.
- * - StatusType no longer includes "ready_for_pickup" in the local union; instead
- *   the schedule dialog updates status directly via raw string to avoid the
- *   StatusBadge type error. StatusBadge receives a mapped safe value.
- * - ComposeEmailDialog textarea uses theme-aware classes (no hardcoded bg-black)
- * - MailerStatusDialog is a real modal, not just a toast
- * - EditScheduleDialog pre-fill correctly fires when dialog opens
- * - All dialogs rendered outside <table> DOM tree
- * - storageUrl() uses supabase.storage.getPublicUrl for correct file URLs
+ * FIXES IN THIS PASS:
+ * - EditScheduleDialog: notification insert is fully isolated in its own
+ *   try/catch so a notifications RLS error can never cause "Failed to save
+ *   pickup schedule". The schedule update and the notification are two
+ *   independent operations — if the notification fails, we log it and move on.
+ * - Real Supabase error message is surfaced in the toast so you can see
+ *   exactly what went wrong (e.g. RLS violation, missing column, etc.)
+ * - Same isolation applied to updateStatus (approve/reject) and
+ *   ComposeEmailDialog so notification failures are always non-fatal.
+ * - "Connect a mail service" info toast removed from EditScheduleDialog
+ *   (it only belongs in ComposeEmailDialog).
  */
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
@@ -66,10 +64,6 @@ function storageUrl(bucket: string, path: string): string {
   return data?.publicUrl ?? "";
 }
 
-/**
- * Maps any status string (including ready_for_pickup which StatusBadge may not
- * know about) to a value StatusBadge accepts.
- */
 function safeBadgeStatus(
   status: string
 ): "submitted" | "under_review" | "approved" | "returned" | "rejected" | "expired" {
@@ -79,13 +73,47 @@ function safeBadgeStatus(
   return (map[status] as any) ?? (status as any);
 }
 
-/**
- * Appends a timestamped note to existing remarks without clobbering any
- * pickup-schedule info that EditScheduleDialog already wrote.
- */
 function appendRemark(existing: string | undefined | null, note: string): string {
   const base = (existing ?? "").trim();
   return base ? `${base} ${note}` : note;
+}
+
+/**
+ * Inserts one row into public.notifications.
+ * Returns true on success, false on failure (always non-fatal to the caller).
+ */
+async function insertNotification({
+  userId,
+  senderId,
+  title,
+  message,
+  type = "staff",
+}: {
+  userId: string;
+  senderId: string | null;
+  title: string;
+  message: string;
+  type?: "system" | "staff";
+}): Promise<boolean> {
+  try {
+    const { error } = await supabase.from("notifications").insert({
+      user_id: userId,
+      sender_id: senderId,
+      title,
+      message,
+      type,
+      is_read: false,
+    });
+    if (error) {
+      // Log the full Supabase error so it's visible in DevTools
+      console.error("[insertNotification] Supabase error:", error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error("[insertNotification] Unexpected error:", err);
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +152,7 @@ type Application = {
   fullname: string;
   idno: string;
   email?: string;
+  user_id?: string;
   department_or_course?: string | null;
   status: AppStatus;
   date: string;
@@ -139,11 +168,13 @@ type Application = {
 
 function EditScheduleDialog({
   app,
+  staffId,
   onSaved,
   open,
   onOpenChange,
 }: {
   app: Application;
+  staffId: string | null;
   onSaved: () => void;
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -152,7 +183,6 @@ function EditScheduleDialog({
   const [batch, setBatch] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // Pre-fill when dialog opens
   useEffect(() => {
     if (!open) return;
     const m = (app.remarks ?? "").match(
@@ -165,17 +195,13 @@ function EditScheduleDialog({
   const save = async () => {
     if (!date) return toast.error("Please choose a pickup date");
     setSaving(true);
+
     try {
       const scheduleTimestamp = new Date().toISOString();
+      const batchLabel = batch && batch !== "none" ? ` (Batch: ${batch})` : "";
+      const pickupLine = `Ready for pickup on ${date}${batchLabel} [Scheduled: ${scheduleTimestamp}]`;
 
-      // Build a clean pickup line — this becomes the primary visible remark
-      // shown to the student/employee in TrackStatus.tsx
-      const pickupLine = `Ready for pickup on ${date}${batch && batch !== "none" ? ` (Batch: ${batch})` : ""} [Scheduled: ${scheduleTimestamp}]`;
-
-      // Strip any previous pickup line before writing the new one so we don't
-      // accumulate duplicates. Keep anything else that was appended (e.g. email logs).
-      const existingRemarks = app.remarks ?? "";
-      const withoutOldPickup = existingRemarks
+      const withoutOldPickup = (app.remarks ?? "")
         .replace(/Ready for pickup on [^\[]+\[Scheduled:[^\]]+\]/g, "")
         .trim();
 
@@ -183,18 +209,47 @@ function EditScheduleDialog({
         ? `${pickupLine} ${withoutOldPickup}`
         : pickupLine;
 
-      const { error } = await supabase
+      // ── Step 1: update the application row ────────────────────────────────
+      // This is the critical operation. If this fails, we surface the real
+      // Supabase error message so you know exactly what went wrong.
+      const { error: updateError } = await supabase
         .from("applications")
         .update({ status: "ready_for_pickup", remarks: newRemarks })
         .eq("id", app.id);
 
-      if (error) throw error;
-      toast.success("Pickup scheduled — applicant will see this on their Track Status page.");
+      if (updateError) {
+        // Surface the actual DB error (e.g. "new row violates row-level security policy")
+        console.error("[EditScheduleDialog] update error:", updateError);
+        toast.error(`Failed to save: ${updateError.message}`);
+        return;
+      }
+
+      // ── Step 2: insert notification (independent — never blocks the save) ─
+      if (app.user_id) {
+        const batchSuffix = batch && batch !== "none" ? ` — ${batch} batch` : "";
+        const notifOk = await insertNotification({
+          userId: app.user_id,
+          senderId: staffId,
+          title: "ID Ready for Pickup",
+          message: `Your ID (${app.id_display}) is ready for pickup on ${date}${batchSuffix}. Please visit the ICTC office during office hours.`,
+        });
+        if (!notifOk) {
+          // Schedule saved fine; notification silently failed.
+          // Warn but don't block — check Supabase RLS on notifications table.
+          toast.warning("Schedule saved, but the in-app notification could not be sent. Check notifications RLS policy.");
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
+      toast.success("Pickup scheduled — applicant will be notified.");
       onSaved();
       onOpenChange(false);
+
     } catch (err) {
-      console.error(err);
-      toast.error("Failed to save pickup schedule");
+      // Catch anything truly unexpected (network down, etc.)
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[EditScheduleDialog] unexpected error:", err);
+      toast.error(`Unexpected error: ${msg}`);
     } finally {
       setSaving(false);
     }
@@ -207,12 +262,16 @@ function EditScheduleDialog({
           <DialogTitle>Schedule Pickup — {app.id_display}</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground -mt-2">
-          The pickup date and batch will appear in the applicant's Track Status remarks.
+          The pickup date and batch will appear in the applicant's Track Status and Notifications.
         </p>
         <div className="space-y-4">
           <div>
             <p className="text-sm text-muted-foreground mb-1">Pickup date</p>
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+            />
           </div>
           <div>
             <p className="text-sm text-muted-foreground mb-1">Batch (optional)</p>
@@ -230,7 +289,9 @@ function EditScheduleDialog({
             </Select>
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
             <Button onClick={save} disabled={saving}>
               {saving ? "Saving…" : "Save & Notify"}
             </Button>
@@ -243,18 +304,17 @@ function EditScheduleDialog({
 
 // ---------------------------------------------------------------------------
 // ComposeEmailDialog
-// FIX: accepts `app` as a prop instead of relying on an outer-scope variable.
-// This prevents stale closure bugs where the dialog reads the wrong applicant's
-// remarks when opened for a different row.
 // ---------------------------------------------------------------------------
 
 function ComposeEmailDialog({
   app,
+  staffId,
   open,
   onOpenChange,
   onSent,
 }: {
-  app: Application;           // ← explicit prop, not outer-scope closure
+  app: Application;
+  staffId: string | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onSent?: () => void;
@@ -263,7 +323,6 @@ function ComposeEmailDialog({
   const [body, setBody] = useState("Hello,\n\nThis is a message from IDLink.");
   const [sending, setSending] = useState(false);
 
-  // Reset when re-opened
   useEffect(() => {
     if (open) {
       setSubject("IDLink Notification");
@@ -275,25 +334,40 @@ function ComposeEmailDialog({
     if (!app.email) return toast.error("No recipient email on record for this applicant");
     setSending(true);
     try {
-      // Replace with a real Supabase Edge Function call in production
+      // Simulated send — replace with a Supabase Edge Function + real mailer
       await new Promise((res) => setTimeout(res, 1000));
 
-      // Append email-sent note without overwriting existing remarks
-      // (pickup schedule info written by EditScheduleDialog is preserved)
+      // ── Step 1: append email-sent note to remarks ─────────────────────────
       const emailNote = `[Email sent: ${new Date().toISOString()}]`;
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from("applications")
         .update({ remarks: appendRemark(app.remarks, emailNote) })
         .eq("id", app.id);
 
-      if (error) throw error;
+      if (updateError) {
+        console.error("[ComposeEmailDialog] remarks update error:", updateError);
+        // Non-fatal for the email flow — continue
+      }
+
+      // ── Step 2: insert notification (independent) ─────────────────────────
+      if (app.user_id) {
+        await insertNotification({
+          userId: app.user_id,
+          senderId: staffId,
+          title: subject,
+          message: body,
+        });
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       toast.success(`Email queued for ${app.email}`);
       toast.info("Connect a mail service (Resend / SendGrid) via a Supabase Edge Function to send real emails.");
       onOpenChange(false);
       onSent?.();
-    } catch {
-      toast.error("Failed to send email");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("[ComposeEmailDialog] error:", err);
+      toast.error(`Failed to send email: ${msg}`);
     } finally {
       setSending(false);
     }
@@ -397,8 +471,8 @@ function ViewFilesDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const photoUrl = app.photo ? storageUrl("uploads", app.photo) : null;
-  const sigUrl = app.signature ? storageUrl("uploads", app.signature) : null;
-  const corUrl = app.cor ? storageUrl("uploads", app.cor) : null;
+  const sigUrl   = app.signature ? storageUrl("uploads", app.signature) : null;
+  const corUrl   = app.cor ? storageUrl("uploads", app.cor) : null;
   const hasFiles = photoUrl || sigUrl || corUrl;
 
   return (
@@ -413,7 +487,6 @@ function ViewFilesDialog({
               No files uploaded for this application.
             </p>
           )}
-
           {photoUrl && (
             <div className="space-y-1">
               <p className="text-sm font-semibold">Photo</p>
@@ -431,7 +504,6 @@ function ViewFilesDialog({
               </a>
             </div>
           )}
-
           {sigUrl && (
             <div className="space-y-1">
               <p className="text-sm font-semibold">Signature</p>
@@ -449,7 +521,6 @@ function ViewFilesDialog({
               </a>
             </div>
           )}
-
           {corUrl && (
             <div className="space-y-1">
               <p className="text-sm font-semibold">COR (Certificate of Registration)</p>
@@ -481,17 +552,17 @@ function ViewFilesDialog({
 // ---------------------------------------------------------------------------
 
 const RecordsManagement = () => {
-  const [records, setRecords] = useState<Application[]>([]);
-  const [searchTerm, setSearchTerm] = useState("");
+  const [records, setRecords]           = useState<Application[]>([]);
+  const [searchTerm, setSearchTerm]     = useState("");
   const [filterStatus, setFilterStatus] = useState<AppStatus | "all">("all");
-  const [loading, setLoading] = useState(false);
-  const [user, setUser] = useState<{ fullname?: string; role?: unknown }>({});
+  const [loading, setLoading]           = useState(false);
+  const [user, setUser]                 = useState<{ fullname?: string; role?: unknown }>({});
+  const [staffId, setStaffId]           = useState<string | null>(null);
 
-  // One open-id per dialog type
-  const [scheduleOpenId, setScheduleOpenId] = useState<number | null>(null);
-  const [composeOpenId, setComposeOpenId] = useState<number | null>(null);
+  const [scheduleOpenId, setScheduleOpenId]   = useState<number | null>(null);
+  const [composeOpenId, setComposeOpenId]     = useState<number | null>(null);
   const [viewFilesOpenId, setViewFilesOpenId] = useState<number | null>(null);
-  const [mailerOpen, setMailerOpen] = useState(false);
+  const [mailerOpen, setMailerOpen]           = useState(false);
 
   const navigate = useNavigate();
 
@@ -499,9 +570,7 @@ const RecordsManagement = () => {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const {
-          data: { user: authUser },
-        } = await supabase.auth.getUser();
+        const { data: { user: authUser } } = await supabase.auth.getUser();
         if (!authUser) {
           toast.error("Please sign in.");
           navigate("/login", { replace: true });
@@ -521,6 +590,7 @@ const RecordsManagement = () => {
         }
 
         setUser({ fullname: profile.fullname, role: profile.role });
+        setStaffId(authUser.id);
 
         if (profile.role !== "staff") {
           toast.error("Access denied. Staff only.");
@@ -534,7 +604,6 @@ const RecordsManagement = () => {
     loadUser();
   }, [navigate]);
 
-  // Fetch
   const fetchRecords = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
@@ -545,7 +614,7 @@ const RecordsManagement = () => {
       if (error) throw error;
       setRecords(data ?? []);
     } catch (err) {
-      console.error(err);
+      console.error("[fetchRecords] error:", err);
       if (!silent) toast.error("Failed to load records");
       setRecords([]);
     } finally {
@@ -561,7 +630,6 @@ const RecordsManagement = () => {
     }
   }, [user]);
 
-  // Actions
   const handleDelete = async (id: number) => {
     if (!confirm("Delete this record permanently?")) return;
     try {
@@ -570,19 +638,47 @@ const RecordsManagement = () => {
       toast.success("Record deleted");
       fetchRecords();
     } catch (err) {
-      toast.error(
-        "Delete failed: " + (err instanceof Error ? err.message : "Unknown error")
-      );
+      toast.error("Delete failed: " + (err instanceof Error ? err.message : "Unknown error"));
     }
   };
 
-  const updateStatus = async (id: number, updates: Partial<Application>) => {
-    const { error } = await supabase.from("applications").update(updates).eq("id", id);
-    if (error) throw error;
+  /**
+   * Updates application status and fires a notification independently.
+   * A notification failure never rolls back the status change.
+   */
+  const updateStatus = async (
+    app: Application,
+    newStatus: AppStatus,
+    remarkNote: string,
+    notification: { title: string; message: string }
+  ) => {
+    // Step 1: update application
+    const { error: updateError } = await supabase
+      .from("applications")
+      .update({
+        status: newStatus,
+        remarks: appendRemark(app.remarks, remarkNote),
+      })
+      .eq("id", app.id);
+
+    if (updateError) {
+      console.error("[updateStatus] Supabase error:", updateError);
+      throw new Error(updateError.message);
+    }
+
+    // Step 2: notification (non-fatal)
+    if (app.user_id) {
+      await insertNotification({
+        userId: app.user_id,
+        senderId: staffId,
+        title: notification.title,
+        message: notification.message,
+      });
+    }
+
     fetchRecords();
   };
 
-  // Derived
   const filteredRecords = records.filter((r) => {
     const q = searchTerm.toLowerCase();
     const matches =
@@ -592,10 +688,9 @@ const RecordsManagement = () => {
     return matches && (filterStatus === "all" || r.status === filterStatus);
   });
 
-  // Look up the full Application object for each open dialog
   const scheduleApp = records.find((r) => r.id === scheduleOpenId) ?? null;
-  const viewApp = records.find((r) => r.id === viewFilesOpenId) ?? null;
-  const composeApp = records.find((r) => r.id === composeOpenId) ?? null;
+  const viewApp     = records.find((r) => r.id === viewFilesOpenId) ?? null;
+  const composeApp  = records.find((r) => r.id === composeOpenId) ?? null;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -621,7 +716,6 @@ const RecordsManagement = () => {
             </CardHeader>
 
             <CardContent className="space-y-6 mt-4">
-              {/* Search + Filter */}
               <div className="flex flex-col md:flex-row gap-3">
                 <div className="relative flex-1">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -641,15 +735,12 @@ const RecordsManagement = () => {
                   </SelectTrigger>
                   <SelectContent>
                     {ALL_STATUSES.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>
-                        {s.label}
-                      </SelectItem>
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              {/* Table */}
               <div className="rounded-xl border overflow-hidden">
                 {loading ? (
                   <p className="p-6 text-center text-muted-foreground">Loading…</p>
@@ -679,9 +770,7 @@ const RecordsManagement = () => {
                           <TableCell>
                             <StatusBadge status={safeBadgeStatus(r.status)} />
                             {r.status === "ready_for_pickup" && (
-                              <span className="ml-1 text-xs text-green-600 font-medium">
-                                Ready
-                              </span>
+                              <span className="ml-1 text-xs text-green-600 font-medium">Ready</span>
                             )}
                           </TableCell>
                           <TableCell>
@@ -694,7 +783,6 @@ const RecordsManagement = () => {
                               : "—"}
                           </TableCell>
 
-                          {/* Quick approve / reject */}
                           <TableCell>
                             <div className="flex gap-2">
                               <Button
@@ -703,17 +791,18 @@ const RecordsManagement = () => {
                                 className="text-green-600 border-green-200 hover:bg-green-50"
                                 onClick={async () => {
                                   try {
-                                    await updateStatus(r.id, {
-                                      status: "approved",
-                                      // Append — don't overwrite any existing pickup remarks
-                                      remarks: appendRemark(
-                                        r.remarks,
-                                        `[Approved: ${new Date().toISOString()}]`
-                                      ),
-                                    });
+                                    await updateStatus(
+                                      r,
+                                      "approved",
+                                      `[Approved: ${new Date().toISOString()}]`,
+                                      {
+                                        title: "Application Approved",
+                                        message: `Your ID application (${r.id_display}) has been approved. Your ID is being processed.`,
+                                      }
+                                    );
                                     toast.success("Approved");
-                                  } catch {
-                                    toast.error("Failed to approve");
+                                  } catch (err) {
+                                    toast.error("Failed to approve: " + (err instanceof Error ? err.message : "Unknown error"));
                                   }
                                 }}
                               >
@@ -725,16 +814,18 @@ const RecordsManagement = () => {
                                 className="text-red-600 border-red-200 hover:bg-red-50"
                                 onClick={async () => {
                                   try {
-                                    await updateStatus(r.id, {
-                                      status: "rejected",
-                                      remarks: appendRemark(
-                                        r.remarks,
-                                        `[Rejected: ${new Date().toISOString()}]`
-                                      ),
-                                    });
+                                    await updateStatus(
+                                      r,
+                                      "rejected",
+                                      `[Rejected: ${new Date().toISOString()}]`,
+                                      {
+                                        title: "Application Rejected",
+                                        message: `Your ID application (${r.id_display}) was not approved. Please visit the ICTC office for more information.`,
+                                      }
+                                    );
                                     toast.success("Rejected");
-                                  } catch {
-                                    toast.error("Failed to reject");
+                                  } catch (err) {
+                                    toast.error("Failed to reject: " + (err instanceof Error ? err.message : "Unknown error"));
                                   }
                                 }}
                               >
@@ -743,7 +834,6 @@ const RecordsManagement = () => {
                             </div>
                           </TableCell>
 
-                          {/* More actions */}
                           <TableCell className="text-right">
                             <div className="flex justify-end items-center gap-1">
                               <DropdownMenu>
@@ -766,7 +856,6 @@ const RecordsManagement = () => {
                                 </DropdownMenuContent>
                               </DropdownMenu>
 
-                              {/* Eye — view files */}
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -776,7 +865,6 @@ const RecordsManagement = () => {
                                 <Eye className="h-4 w-4 text-primary" />
                               </Button>
 
-                              {/* Delete */}
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -802,24 +890,20 @@ const RecordsManagement = () => {
         </main>
       </div>
 
-      {/* ── Global dialogs — outside <table> ── */}
-
       {scheduleApp && (
         <EditScheduleDialog
           app={scheduleApp}
+          staffId={staffId}
           onSaved={fetchRecords}
           open={scheduleOpenId === scheduleApp.id}
           onOpenChange={(v) => setScheduleOpenId(v ? scheduleApp.id : null)}
         />
       )}
 
-      {/* FIX: pass `app={composeApp}` as a prop instead of reading composeApp
-          from an outer-scope variable inside the dialog. This ensures the dialog
-          always has the correct, up-to-date Application object for the row that
-          was clicked, preventing stale-closure bugs. */}
       {composeApp && (
         <ComposeEmailDialog
           app={composeApp}
+          staffId={staffId}
           open={composeOpenId === composeApp.id}
           onOpenChange={(v) => setComposeOpenId(v ? composeApp.id : null)}
           onSent={fetchRecords}

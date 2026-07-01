@@ -255,7 +255,7 @@ const EmployeeDashboard = () => {
             <DashboardCard title="Apply for ID" description="Submit new ID application" icon={FileText} onClick={() => navigate("/apply")} />
             <DashboardCard title="Track Status" description="Check application status" icon={BarChart3} onClick={() => navigate("/track")} />
             <DashboardCard title="Contract Info" description="View contract details" icon={Calendar} iconClassName="text-accent" onClick={() => navigate("/contract")} />
-            <DashboardCard title="Notifications" description="View updates & alerts" icon={Bell} iconClassName="text-accent">
+            <DashboardCard title="Notifications" description="View updates & alerts" icon={Bell} iconClassName="text-accent" onClick={() => navigate("/notifications")}>
               <div className="text-2xl font-bold">{readyApps.length > 0 ? readyApps.length : "—"}</div>
               <p className="text-xs text-muted-foreground">{readyApps.length > 0 ? "Ready for pickup" : "No new alerts"}</p>
             </DashboardCard>

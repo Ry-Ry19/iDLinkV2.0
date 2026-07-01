@@ -28,6 +28,7 @@ import EmployeeDashboard from "./pages/EmployeeDashboard";
 import Landing from "./pages/Landing";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import Notifications from "./pages/Notifications";
 import RecordsManagement from "./pages/RecordsManagement";
 import Register from "./pages/register";
 import RevalidateID from "./pages/RevalidateID";
@@ -56,6 +57,7 @@ const App = () => (
           <Route path="/track" element={<TrackStatus />} />
           <Route path="/contract" element={<ContractExpiration />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/notifications" element={<Notifications />} />
 
           {/* Student Routes */}
           <Route path="/student/dashboard" element={<StudentDashboard />} />
