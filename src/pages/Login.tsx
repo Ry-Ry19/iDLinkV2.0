@@ -32,10 +32,7 @@ import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  RadioGroup,
-  RadioGroupItem
-} from "@/components/ui/radio-group";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Briefcase,
   Eye,
@@ -53,7 +50,11 @@ import { supabase } from "@/lib/supabaseClient";
 
 type Role = "student" | "employee" | "staff";
 
-const ROLE_OPTIONS: { value: Role; label: string; icon: typeof GraduationCap }[] = [
+const ROLE_OPTIONS: {
+  value: Role;
+  label: string;
+  icon: typeof GraduationCap;
+}[] = [
   { value: "student", label: "Student", icon: GraduationCap },
   { value: "employee", label: "Employee", icon: Briefcase },
   { value: "staff", label: "ICTC Staff", icon: ShieldCheck },
@@ -93,7 +94,9 @@ const Login = () => {
         .single();
 
       if (profileError || !profile) {
-        throw new Error("Profile records not found in database. Please signup first.");
+        throw new Error(
+          "Profile records not found in database. Please signup first.",
+        );
       }
 
       localStorage.setItem(
@@ -103,7 +106,7 @@ const Login = () => {
           role: profile.role,
           idno: profile.idno,
           email: data.user.email,
-        })
+        }),
       );
 
       toast.success("Login successful");
@@ -117,13 +120,17 @@ const Login = () => {
         redirectPath = "/staff/dashboard";
       }
       navigate(redirectPath);
-
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      if (err.message?.toLowerCase().includes("email not confirmed")) {
-        toast.error("Please check your email to confirm your account before logging in.");
+      if (
+        err instanceof Error &&
+        err.message?.toLowerCase().includes("email not confirmed")
+      ) {
+        toast.error(
+          "Please check your email to confirm your account before logging in.",
+        );
       } else {
-        toast.error(err.message || "Login failed");
+        toast.error(err instanceof Error ? err.message : "Login failed");
       }
     } finally {
       setLoading(false);
@@ -135,21 +142,20 @@ const Login = () => {
       <Navbar />
 
       <main className="flex-1 flex flex-col items-center justify-center bg-muted px-4 py-12">
-
         {/* ONE unified container: form + video as equal-height halves */}
         <div className="relative mx-auto grid w-full max-w-7xl overflow-hidden rounded-2xl bg-card shadow-2xl md:grid-cols-[2fr_3fr]">
-
           {/* LEFT: LOGIN FORM */}
           <div className="flex flex-col p-8 md:p-8">
             <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
-
               {/* Logo lockup + plain heading, no separate subtitle line */}
               <div className="mb-8 flex flex-col items-center gap-5 text-center">
                 <div className="flex items-center gap-2">
                   <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
                     <GraduationCap className="h-5 w-5 text-primary" />
                   </div>
-                  <span className="text-lg font-bold tracking-tight">IDLink</span>
+                  <span className="text-lg font-bold tracking-tight">
+                    IDLink
+                  </span>
                 </div>
                 <h1 className="text-base font-medium text-muted-foreground">
                   Login to continue
@@ -157,9 +163,10 @@ const Login = () => {
               </div>
 
               <form onSubmit={handleLogin} className="space-y-4">
-
                 <div className="space-y-1.5">
-                  <Label htmlFor="email" className="sr-only">Email</Label>
+                  <Label htmlFor="email" className="sr-only">
+                    Email
+                  </Label>
                   <div className="relative">
                     <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -176,7 +183,9 @@ const Login = () => {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label htmlFor="password" className="sr-only">Password</Label>
+                  <Label htmlFor="password" className="sr-only">
+                    Password
+                  </Label>
                   <div className="relative">
                     <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
@@ -193,10 +202,16 @@ const Login = () => {
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      aria-label={
+                        showPassword ? "Hide password" : "Show password"
+                      }
                       tabIndex={-1}
                     >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -220,9 +235,17 @@ const Login = () => {
                               : "border-border hover:border-primary/40 hover:bg-background"
                           }`}
                         >
-                          <RadioGroupItem value={value} id={value} className="sr-only" />
-                          <Icon className={`h-5 w-5 ${active ? "text-primary" : "text-muted-foreground"}`} />
-                          <span className={`text-xs font-medium leading-tight ${active ? "text-primary" : "text-foreground"}`}>
+                          <RadioGroupItem
+                            value={value}
+                            id={value}
+                            className="sr-only"
+                          />
+                          <Icon
+                            className={`h-5 w-5 ${active ? "text-primary" : "text-muted-foreground"}`}
+                          />
+                          <span
+                            className={`text-xs font-medium leading-tight ${active ? "text-primary" : "text-foreground"}`}
+                          >
                             {label}
                           </span>
                         </label>
@@ -233,7 +256,10 @@ const Login = () => {
 
                 {/* Forgot password + Login button share one row, like the reference */}
                 <div className="flex items-center justify-between gap-4 pt-1">
-                  <a href="#" className="text-sm font-medium text-primary hover:underline">
+                  <a
+                    href="#"
+                    className="text-sm font-medium text-primary hover:underline"
+                  >
                     Forgot password?
                   </a>
                   <Button
@@ -241,7 +267,9 @@ const Login = () => {
                     disabled={loading}
                     className="gradient-primary px-8 text-primary-foreground"
                   >
-                    {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    {loading && (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
                     {loading ? "Logging in..." : "Login"}
                   </Button>
                 </div>
@@ -249,7 +277,10 @@ const Login = () => {
 
               <p className="mt-6 text-center text-sm text-muted-foreground">
                 Don't have an account?{" "}
-                <a href="/register" className="font-medium text-primary hover:underline">
+                <a
+                  href="/register"
+                  className="font-medium text-primary hover:underline"
+                >
                   Register here
                 </a>
               </p>
@@ -277,16 +308,14 @@ const Login = () => {
               Campus tour
             </span>
           </div>
-
         </div>
 
         {/* Small footer caption under the card, year computed at render time */}
         <p className="mt-6 text-center text-30 text-muted-bold">
-          Copyright © {new Date().getFullYear()} IDLink — MSU-Iligan Institute of Technology. 9200 Iligan City, Philippines.
+          Copyright © {new Date().getFullYear()} IDLink — MSU-Iligan Institute
+          of Technology. 9200 Iligan City, Philippines.
         </p>
       </main>
-
-   
     </div>
   );
 };

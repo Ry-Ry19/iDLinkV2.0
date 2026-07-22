@@ -44,7 +44,11 @@ import { supabase } from "@/lib/supabaseClient";
 
 type Role = "student" | "employee" | "staff";
 
-const ROLE_OPTIONS: { value: Role; label: string; icon: typeof GraduationCap }[] = [
+const ROLE_OPTIONS: {
+  value: Role;
+  label: string;
+  icon: typeof GraduationCap;
+}[] = [
   { value: "student", label: "Student", icon: GraduationCap },
   { value: "employee", label: "Employee", icon: Briefcase },
   { value: "staff", label: "ICTC Staff", icon: ShieldCheck },
@@ -79,31 +83,32 @@ const Register = () => {
     setLoading(true);
 
     try {
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            fullname,
-            idno,
-            course: role === "student" ? course : null,
-            year: role === "student" ? year : null,
-            role,
-          }
-        }
-      });
+      const { data: signUpData, error: signUpError } =
+        await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              fullname,
+              idno,
+              course: role === "student" ? course : null,
+              year: role === "student" ? year : null,
+              role,
+            },
+          },
+        });
 
-            if (signUpError) {
+      if (signUpError) {
         throw signUpError;
       }
 
       // REMOVE OR REPLACE the strict check that was crashing your app:
       // if (!signUpData?.user) { throw new Error(...) }
-      
+
       // USE THIS INSTEAD:
       let userId = signUpData?.user?.id;
 
-      // If user data isn't returned immediately (because confirmation is active), 
+      // If user data isn't returned immediately (because confirmation is active),
       // check the identities array where Supabase stores unconfirmed user details.
       if (!userId && signUpData?.user?.identities?.[0]) {
         userId = signUpData.user.identities[0].id;
@@ -111,29 +116,31 @@ const Register = () => {
 
       // If we still can't find a user ID, gracefully fall back to a confirmation screen
       if (!userId) {
-        toast.success("Registration initiated! Please check your email to confirm your account.");
+        toast.success(
+          "Registration initiated! Please check your email to confirm your account.",
+        );
         navigate("/login");
         return;
       }
 
       // Create profile entry in the profiles table using our resolved userId
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            id: userId,
-            fullname,
-            idno,
-            role,
-            course: role === "student" ? course : null,
-            year: role === "student" ? year : null,
-          }
-        ]);
-         if (profileError) {
+      const { error: profileError } = await supabase.from("profiles").insert([
+        {
+          id: userId,
+          fullname,
+          idno,
+          role,
+          course: role === "student" ? course : null,
+          year: role === "student" ? year : null,
+        },
+      ]);
+      if (profileError) {
         throw profileError;
       }
 
-      toast.success("Registration successful! Please check your email to confirm your account.");
+      toast.success(
+        "Registration successful! Please check your email to confirm your account.",
+      );
 
       // Redirect to appropriate dashboard based on role after successful registration
       let redirectPath = "/login"; // fallback
@@ -145,19 +152,14 @@ const Register = () => {
         redirectPath = "/staff/dashboard";
       }
       navigate(redirectPath);
-    }  catch (err: any) {
-    console.error('Registration error:', err);
+    } catch (err: unknown) {
+      console.error(err);
 
-    // Extract detailed Supabase error if available
-    const errorMessage = err.message || 'Registration failed';
-    if (err?.error?.message) {
-      toast.error(`Database error: ${err.error.message}`);
-    } else if (err?.response?.data?.message) {
-      toast.error(`Database error: ${err.response.data.message}`);
-    } else {
-      toast.error(errorMessage);
-    }
-  } finally {
+      const message =
+        err instanceof Error ? err.message : "Registration failed";
+
+      toast.error(message);
+    } finally {
       setLoading(false);
     }
   };
@@ -179,7 +181,6 @@ const Register = () => {
 
         {/* ONE unified container: form + video as equal-height halves, same pattern as Login */}
         <div className="relative mx-auto grid w-full max-w-5xl overflow-hidden rounded-2xl border border-border/60 bg-card shadow-xl md:grid-cols-2">
-
           {/* LEFT: REGISTER FORM */}
           <div className="flex flex-col p-8 md:p-10">
             <div className="mx-auto w-full max-w-md">
@@ -189,14 +190,15 @@ const Register = () => {
                     <GraduationCap className="h-7 w-7 text-primary" />
                   </div>
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight">Register to IDLink</h1>
+                <h1 className="text-2xl font-bold tracking-tight">
+                  Register to IDLink
+                </h1>
                 <p className="text-sm text-muted-foreground">
                   Fill in your details to create an account
                 </p>
               </div>
 
               <form onSubmit={handleRegister} className="space-y-5">
-
                 <div className="space-y-2">
                   <Label htmlFor="idno">ID Number</Label>
                   <div className="relative">
@@ -264,10 +266,16 @@ const Register = () => {
                       type="button"
                       onClick={() => setShowPassword((v) => !v)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                      aria-label={showPassword ? "Hide password" : "Show password"}
+                      aria-label={
+                        showPassword ? "Hide password" : "Show password"
+                      }
                       tabIndex={-1}
                     >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showPassword ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
                     </button>
                   </div>
                 </div>
@@ -326,9 +334,17 @@ const Register = () => {
                               : "border-border hover:border-primary/40 hover:bg-background"
                           }`}
                         >
-                          <RadioGroupItem value={value} id={value} className="sr-only" />
-                          <Icon className={`h-5 w-5 ${active ? "text-primary" : "text-muted-foreground"}`} />
-                          <span className={`text-xs font-medium leading-tight ${active ? "text-primary" : "text-foreground"}`}>
+                          <RadioGroupItem
+                            value={value}
+                            id={value}
+                            className="sr-only"
+                          />
+                          <Icon
+                            className={`h-5 w-5 ${active ? "text-primary" : "text-muted-foreground"}`}
+                          />
+                          <span
+                            className={`text-xs font-medium leading-tight ${active ? "text-primary" : "text-foreground"}`}
+                          >
                             {label}
                           </span>
                         </label>
@@ -347,8 +363,13 @@ const Register = () => {
                 </Button>
 
                 <div className="text-center text-sm">
-                  <span className="text-muted-foreground">Already have an account? </span>
-                  <a href="/login" className="font-medium text-primary hover:underline">
+                  <span className="text-muted-foreground">
+                    Already have an account?{" "}
+                  </span>
+                  <a
+                    href="/login"
+                    className="font-medium text-primary hover:underline"
+                  >
                     Login here
                   </a>
                 </div>
@@ -377,16 +398,16 @@ const Register = () => {
               Campus tour
             </span>
             <div className="pointer-events-none absolute inset-x-0 bottom-12 px-4 text-center text-white">
-              <div className="text-sm font-medium">Promotional Video clone by iDLink System</div>
+              <div className="text-sm font-medium">
+                Promotional Video clone by iDLink System
+              </div>
               <div className="text-xs text-white/70">
                 Credits to MSU-IIT <code>public/</code>
               </div>
             </div>
           </div>
-
         </div>
       </main>
-
     </div>
   );
 };

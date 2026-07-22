@@ -18,7 +18,13 @@ import Navbar from "@/components/Navbar";
 import StaffSidebar from "@/components/StaffSidebar";
 import StatusBadge from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -65,15 +71,42 @@ function storageUrl(bucket: string, path: string): string {
 }
 
 function safeBadgeStatus(
-  status: string
-): "submitted" | "under_review" | "approved" | "returned" | "rejected" | "expired" {
-  const map: Record<string, "submitted" | "under_review" | "approved" | "returned" | "rejected" | "expired"> = {
+  status: string,
+):
+  | "submitted"
+  | "under_review"
+  | "approved"
+  | "returned"
+  | "rejected"
+  | "expired" {
+  const map: Record<
+    string,
+    | "submitted"
+    | "under_review"
+    | "approved"
+    | "returned"
+    | "rejected"
+    | "expired"
+  > = {
     ready_for_pickup: "approved",
   };
-  return (map[status] as any) ?? (status as any);
+  if (status in map) {
+    return map[status];
+  }
+
+  return status as
+    | "submitted"
+    | "under_review"
+    | "approved"
+    | "returned"
+    | "rejected"
+    | "expired";
 }
 
-function appendRemark(existing: string | undefined | null, note: string): string {
+function appendRemark(
+  existing: string | undefined | null,
+  note: string,
+): string {
   const base = (existing ?? "").trim();
   return base ? `${base} ${note}` : note;
 }
@@ -186,7 +219,7 @@ function EditScheduleDialog({
   useEffect(() => {
     if (!open) return;
     const m = (app.remarks ?? "").match(
-      /Ready for pickup on (\d{4}-\d{2}-\d{2})(?: \(Batch: ([^)]+)\))?/
+      /Ready for pickup on (\d{4}-\d{2}-\d{2})(?: \(Batch: ([^)]+)\))?/,
     );
     setDate(m?.[1] ?? "");
     setBatch(m?.[2] ?? "");
@@ -202,7 +235,10 @@ function EditScheduleDialog({
       const pickupLine = `Ready for pickup on ${date}${batchLabel} [Scheduled: ${scheduleTimestamp}]`;
 
       const withoutOldPickup = (app.remarks ?? "")
-        .replace(/Ready for pickup on [^\[]+\[Scheduled:[^\]]+\]/g, "")
+        .replace(
+          /Ready for pickup on [/Ready for pickup on [^[]+\\[Scheduled:[^\\]]+\\]/g,
+          "",
+        )
         .trim();
 
       const newRemarks = withoutOldPickup
@@ -226,7 +262,8 @@ function EditScheduleDialog({
 
       // ── Step 2: insert notification (independent — never blocks the save) ─
       if (app.user_id) {
-        const batchSuffix = batch && batch !== "none" ? ` — ${batch} batch` : "";
+        const batchSuffix =
+          batch && batch !== "none" ? ` — ${batch} batch` : "";
         const notifOk = await insertNotification({
           userId: app.user_id,
           senderId: staffId,
@@ -236,7 +273,9 @@ function EditScheduleDialog({
         if (!notifOk) {
           // Schedule saved fine; notification silently failed.
           // Warn but don't block — check Supabase RLS on notifications table.
-          toast.warning("Schedule saved, but the in-app notification could not be sent. Check notifications RLS policy.");
+          toast.warning(
+            "Schedule saved, but the in-app notification could not be sent. Check notifications RLS policy.",
+          );
         }
       }
       // ─────────────────────────────────────────────────────────────────────
@@ -244,7 +283,6 @@ function EditScheduleDialog({
       toast.success("Pickup scheduled — applicant will be notified.");
       onSaved();
       onOpenChange(false);
-
     } catch (err) {
       // Catch anything truly unexpected (network down, etc.)
       const msg = err instanceof Error ? err.message : String(err);
@@ -262,7 +300,8 @@ function EditScheduleDialog({
           <DialogTitle>Schedule Pickup — {app.id_display}</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground -mt-2">
-          The pickup date and batch will appear in the applicant's Track Status and Notifications.
+          The pickup date and batch will appear in the applicant's Track Status
+          and Notifications.
         </p>
         <div className="space-y-4">
           <div>
@@ -274,7 +313,9 @@ function EditScheduleDialog({
             />
           </div>
           <div>
-            <p className="text-sm text-muted-foreground mb-1">Batch (optional)</p>
+            <p className="text-sm text-muted-foreground mb-1">
+              Batch (optional)
+            </p>
             <Select value={batch} onValueChange={setBatch}>
               <SelectTrigger>
                 <SelectValue placeholder="Select batch" />
@@ -331,7 +372,8 @@ function ComposeEmailDialog({
   }, [open]);
 
   const send = async () => {
-    if (!app.email) return toast.error("No recipient email on record for this applicant");
+    if (!app.email)
+      return toast.error("No recipient email on record for this applicant");
     setSending(true);
     try {
       // Simulated send — replace with a Supabase Edge Function + real mailer
@@ -345,7 +387,10 @@ function ComposeEmailDialog({
         .eq("id", app.id);
 
       if (updateError) {
-        console.error("[ComposeEmailDialog] remarks update error:", updateError);
+        console.error(
+          "[ComposeEmailDialog] remarks update error:",
+          updateError,
+        );
         // Non-fatal for the email flow — continue
       }
 
@@ -361,7 +406,9 @@ function ComposeEmailDialog({
       // ─────────────────────────────────────────────────────────────────────
 
       toast.success(`Email queued for ${app.email}`);
-      toast.info("Connect a mail service (Resend / SendGrid) via a Supabase Edge Function to send real emails.");
+      toast.info(
+        "Connect a mail service (Resend / SendGrid) via a Supabase Edge Function to send real emails.",
+      );
       onOpenChange(false);
       onSent?.();
     } catch (err) {
@@ -390,7 +437,10 @@ function ComposeEmailDialog({
           </div>
           <div>
             <p className="text-sm text-muted-foreground mb-1">Subject</p>
-            <Input value={subject} onChange={(e) => setSubject(e.target.value)} />
+            <Input
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            />
           </div>
           <div>
             <p className="text-sm text-muted-foreground mb-1">Message</p>
@@ -402,7 +452,9 @@ function ComposeEmailDialog({
             />
           </div>
           <div className="flex justify-end gap-2">
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
             <Button onClick={send} disabled={sending}>
               {sending ? "Sending…" : "Send"}
             </Button>
@@ -444,12 +496,14 @@ function MailerStatusDialog({
             <span className="font-medium text-yellow-600">Not connected</span>
           </div>
           <p className="text-muted-foreground text-xs pt-1">
-            To send real emails, connect a mail provider (Resend, SendGrid, etc.)
-            via a Supabase Edge Function and replace the simulated send in
+            To send real emails, connect a mail provider (Resend, SendGrid,
+            etc.) via a Supabase Edge Function and replace the simulated send in
             ComposeEmailDialog.
           </p>
           <div className="flex justify-end pt-1">
-            <Button variant="ghost" onClick={() => onOpenChange(false)}>Close</Button>
+            <Button variant="ghost" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
           </div>
         </div>
       </DialogContent>
@@ -471,8 +525,8 @@ function ViewFilesDialog({
   onOpenChange: (v: boolean) => void;
 }) {
   const photoUrl = app.photo ? storageUrl("uploads", app.photo) : null;
-  const sigUrl   = app.signature ? storageUrl("uploads", app.signature) : null;
-  const corUrl   = app.cor ? storageUrl("uploads", app.cor) : null;
+  const sigUrl = app.signature ? storageUrl("uploads", app.signature) : null;
+  const corUrl = app.cor ? storageUrl("uploads", app.cor) : null;
   const hasFiles = photoUrl || sigUrl || corUrl;
 
   return (
@@ -499,7 +553,12 @@ function ViewFilesDialog({
                   toast.error("Could not load photo");
                 }}
               />
-              <a href={photoUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline">
+              <a
+                href={photoUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-primary underline"
+              >
                 Open in new tab
               </a>
             </div>
@@ -516,27 +575,44 @@ function ViewFilesDialog({
                   toast.error("Could not load signature");
                 }}
               />
-              <a href={sigUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline">
+              <a
+                href={sigUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-primary underline"
+              >
                 Open in new tab
               </a>
             </div>
           )}
           {corUrl && (
             <div className="space-y-1">
-              <p className="text-sm font-semibold">COR (Certificate of Registration)</p>
+              <p className="text-sm font-semibold">
+                COR (Certificate of Registration)
+              </p>
               {app.cor?.toLowerCase().endsWith(".pdf") ? (
-                <iframe src={corUrl} title="COR PDF" className="w-full h-64 rounded-lg border" />
+                <iframe
+                  src={corUrl}
+                  title="COR PDF"
+                  className="w-full h-64 rounded-lg border"
+                />
               ) : (
                 <img
                   src={corUrl}
                   alt="COR"
                   className="rounded-lg border max-h-64 object-contain w-full bg-muted"
                   onError={(e) => {
-                    (e.currentTarget as HTMLImageElement).style.display = "none";
+                    (e.currentTarget as HTMLImageElement).style.display =
+                      "none";
                   }}
                 />
               )}
-              <a href={corUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline">
+              <a
+                href={corUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs text-primary underline"
+              >
                 Open / Download COR
               </a>
             </div>
@@ -552,17 +628,17 @@ function ViewFilesDialog({
 // ---------------------------------------------------------------------------
 
 const RecordsManagement = () => {
-  const [records, setRecords]           = useState<Application[]>([]);
-  const [searchTerm, setSearchTerm]     = useState("");
+  const [records, setRecords] = useState<Application[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState<AppStatus | "all">("all");
-  const [loading, setLoading]           = useState(false);
-  const [user, setUser]                 = useState<{ fullname?: string; role?: unknown }>({});
-  const [staffId, setStaffId]           = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [user, setUser] = useState<{ fullname?: string; role?: unknown }>({});
+  const [staffId, setStaffId] = useState<string | null>(null);
 
-  const [scheduleOpenId, setScheduleOpenId]   = useState<number | null>(null);
-  const [composeOpenId, setComposeOpenId]     = useState<number | null>(null);
+  const [scheduleOpenId, setScheduleOpenId] = useState<number | null>(null);
+  const [composeOpenId, setComposeOpenId] = useState<number | null>(null);
   const [viewFilesOpenId, setViewFilesOpenId] = useState<number | null>(null);
-  const [mailerOpen, setMailerOpen]           = useState(false);
+  const [mailerOpen, setMailerOpen] = useState(false);
 
   const navigate = useNavigate();
 
@@ -570,7 +646,9 @@ const RecordsManagement = () => {
   useEffect(() => {
     const loadUser = async () => {
       try {
-        const { data: { user: authUser } } = await supabase.auth.getUser();
+        const {
+          data: { user: authUser },
+        } = await supabase.auth.getUser();
         if (!authUser) {
           toast.error("Please sign in.");
           navigate("/login", { replace: true });
@@ -633,12 +711,18 @@ const RecordsManagement = () => {
   const handleDelete = async (id: number) => {
     if (!confirm("Delete this record permanently?")) return;
     try {
-      const { error } = await supabase.from("applications").delete().eq("id", id);
+      const { error } = await supabase
+        .from("applications")
+        .delete()
+        .eq("id", id);
       if (error) throw error;
       toast.success("Record deleted");
       fetchRecords();
     } catch (err) {
-      toast.error("Delete failed: " + (err instanceof Error ? err.message : "Unknown error"));
+      toast.error(
+        "Delete failed: " +
+          (err instanceof Error ? err.message : "Unknown error"),
+      );
     }
   };
 
@@ -650,7 +734,7 @@ const RecordsManagement = () => {
     app: Application,
     newStatus: AppStatus,
     remarkNote: string,
-    notification: { title: string; message: string }
+    notification: { title: string; message: string },
   ) => {
     // Step 1: update application
     const { error: updateError } = await supabase
@@ -689,8 +773,8 @@ const RecordsManagement = () => {
   });
 
   const scheduleApp = records.find((r) => r.id === scheduleOpenId) ?? null;
-  const viewApp     = records.find((r) => r.id === viewFilesOpenId) ?? null;
-  const composeApp  = records.find((r) => r.id === composeOpenId) ?? null;
+  const viewApp = records.find((r) => r.id === viewFilesOpenId) ?? null;
+  const composeApp = records.find((r) => r.id === composeOpenId) ?? null;
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
@@ -706,13 +790,17 @@ const RecordsManagement = () => {
         <main className="flex-1 p-6 bg-muted/10">
           <div className="mb-6">
             <h1 className="text-3xl font-bold">Records Management</h1>
-            <p className="text-muted-foreground">Monitor and manage ID applications</p>
+            <p className="text-muted-foreground">
+              Monitor and manage ID applications
+            </p>
           </div>
 
           <Card className="shadow-lg rounded-xl">
             <CardHeader className="border-b">
               <CardTitle>Applications</CardTitle>
-              <CardDescription>Student and Employee ID submissions</CardDescription>
+              <CardDescription>
+                Student and Employee ID submissions
+              </CardDescription>
             </CardHeader>
 
             <CardContent className="space-y-6 mt-4">
@@ -735,7 +823,9 @@ const RecordsManagement = () => {
                   </SelectTrigger>
                   <SelectContent>
                     {ALL_STATUSES.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                      <SelectItem key={s.value} value={s.value}>
+                        {s.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -743,9 +833,13 @@ const RecordsManagement = () => {
 
               <div className="rounded-xl border overflow-hidden">
                 {loading ? (
-                  <p className="p-6 text-center text-muted-foreground">Loading…</p>
+                  <p className="p-6 text-center text-muted-foreground">
+                    Loading…
+                  </p>
                 ) : records.length === 0 ? (
-                  <p className="p-6 text-center text-muted-foreground">No records found</p>
+                  <p className="p-6 text-center text-muted-foreground">
+                    No records found
+                  </p>
                 ) : (
                   <Table>
                     <TableHeader>
@@ -763,14 +857,18 @@ const RecordsManagement = () => {
                     <TableBody>
                       {filteredRecords.map((r) => (
                         <TableRow key={r.id} className="hover:bg-muted/20">
-                          <TableCell className="font-semibold">{r.id_display}</TableCell>
+                          <TableCell className="font-semibold">
+                            {r.id_display}
+                          </TableCell>
                           <TableCell>{r.fullname}</TableCell>
                           <TableCell>{r.idno}</TableCell>
                           <TableCell>{r.department_or_course ?? "—"}</TableCell>
                           <TableCell>
                             <StatusBadge status={safeBadgeStatus(r.status)} />
                             {r.status === "ready_for_pickup" && (
-                              <span className="ml-1 text-xs text-green-600 font-medium">Ready</span>
+                              <span className="ml-1 text-xs text-green-600 font-medium">
+                                Ready
+                              </span>
                             )}
                           </TableCell>
                           <TableCell>
@@ -798,11 +896,16 @@ const RecordsManagement = () => {
                                       {
                                         title: "Application Approved",
                                         message: `Your ID application (${r.id_display}) has been approved. Your ID is being processed.`,
-                                      }
+                                      },
                                     );
                                     toast.success("Approved");
                                   } catch (err) {
-                                    toast.error("Failed to approve: " + (err instanceof Error ? err.message : "Unknown error"));
+                                    toast.error(
+                                      "Failed to approve: " +
+                                        (err instanceof Error
+                                          ? err.message
+                                          : "Unknown error"),
+                                    );
                                   }
                                 }}
                               >
@@ -821,11 +924,16 @@ const RecordsManagement = () => {
                                       {
                                         title: "Application Rejected",
                                         message: `Your ID application (${r.id_display}) was not approved. Please visit the ICTC office for more information.`,
-                                      }
+                                      },
                                     );
                                     toast.success("Rejected");
                                   } catch (err) {
-                                    toast.error("Failed to reject: " + (err instanceof Error ? err.message : "Unknown error"));
+                                    toast.error(
+                                      "Failed to reject: " +
+                                        (err instanceof Error
+                                          ? err.message
+                                          : "Unknown error"),
+                                    );
                                   }
                                 }}
                               >
@@ -838,19 +946,29 @@ const RecordsManagement = () => {
                             <div className="flex justify-end items-center gap-1">
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" aria-label="More actions">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    aria-label="More actions"
+                                  >
                                     <MoreHorizontal className="h-4 w-4" />
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                                  <DropdownMenuItem onSelect={() => setScheduleOpenId(r.id)}>
+                                  <DropdownMenuItem
+                                    onSelect={() => setScheduleOpenId(r.id)}
+                                  >
                                     <Edit className="mr-2 h-3.5 w-3.5" />
                                     Schedule Pickup
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => setComposeOpenId(r.id)}>
+                                  <DropdownMenuItem
+                                    onSelect={() => setComposeOpenId(r.id)}
+                                  >
                                     Send Email
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => setMailerOpen(true)}>
+                                  <DropdownMenuItem
+                                    onSelect={() => setMailerOpen(true)}
+                                  >
                                     Mailer Status
                                   </DropdownMenuItem>
                                 </DropdownMenuContent>
@@ -883,7 +1001,8 @@ const RecordsManagement = () => {
               </div>
 
               <p className="text-sm text-muted-foreground">
-                Showing {filteredRecords.length} of {records.length} applications
+                Showing {filteredRecords.length} of {records.length}{" "}
+                applications
               </p>
             </CardContent>
           </Card>
